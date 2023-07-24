@@ -65,3 +65,6 @@ Run the following script to compute summary statistics of a folder `<dirname>` o
 ```
 python compute_Hsummary.py --dirname <> --savename <> 
 ```
+
+## Benchmarking
+Soon to come! 

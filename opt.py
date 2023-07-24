@@ -612,7 +612,8 @@ if __name__ == '__main__':
         if args.wbits < 16:
             # Preprocessing flags
             if args.qfn=='b': assert args.pre_proj is True
-            print(f"preprocessing flags: gptqH:{args.pre_gptqH}, rescale:{args.pre_rescale}, proj:{args.pre_proj}, proj_extra:{args.pre_proj_extra}, qfn:{args.qfn}")
+            print(f"Preprocessing flags: gptqH:{args.pre_gptqH}, rescale:{args.pre_rescale}, proj:{args.pre_proj}, proj_extra:{args.pre_proj_extra}, qfn:{args.qfn}")
+            print(f"using lazy_batch updates: {args.lazy_batch}")
             # LDL checks
             if ('ldl' in args.quant) and args.unbiased and (args.npasses > 0):
                 print(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
@@ -622,7 +623,6 @@ if __name__ == '__main__':
             print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
             print("")
             print(f'Proxy Summary: Qmethod:{args.quant}, Unbiased: {args.unbiased}, W:{args.wbits}, NPass:{args.npasses}')
-            print(f"Preproc: gptqH:{args.pre_gptqH}, rescale:{args.pre_rescale}, proj:{args.pre_proj}, qfn:{args.qfn}")
             print('Quantization done.')
             print("")
 
