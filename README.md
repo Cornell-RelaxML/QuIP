@@ -1,6 +1,10 @@
 # QuIP: Quantization with Incoherence Processing
 
-This repository contains code for the paper [**QuIP: 2-Bit Quantization of Large Language Models with Guarantees**](todo). Please see our paper for full details on the algorithms. 
+This repository contains code for the paper [**QuIP: 2-Bit Quantization of Large Language Models with Guarantees**](todo). 
+
+**TLDR:** Our proposed incoherence processing enables quantization of large language models down to 2 bits.
+Please see our paper for full details.
+
 The code is built on top of [OPTQ's repository](https://github.com/IST-DASLab/gptq). The current code includes the following: 
 
 ## Language Generation
@@ -15,11 +19,11 @@ CUDA_VISIBLE_DEVICES=0 python opt.py facebook/opt-125m c4 --wbits 4 --quant gptq
 ````
 
 Quantization methods include:
-- ldlq: runs the LDLQ algorithm (equivalent to OPTQ)
-- ldlqRG: runs the LDLQ_RG algorithm with additional hessian-based hessian reordering, and further greedy updates, with `--npasses` controlling the number of passes over the weights
-- gptq: runs OPTQ algorithm as implemented by its authors
-- allbal: algorithm to run greedy updates by themselves, with `--npasses` the argument controlling the number of passes over the weights
-- ldlbal_admm: alternative algorithm which constraints the rounded weights to be sufficiently close to their original, giving a better theoretical bound.
+- `ldlq`: runs the LDLQ rounding algorithm (we show its equivalence to OPTQ, providing a novel theoretical analysis)
+- `ldlqRG`: runs the LDLQ_RG algorithm with additional hessian-based hessian reordering, and further greedy updates, with `--npasses` controlling the number of passes over the weights
+- `gptq`: runs OPTQ algorithm as implemented by its authors
+- `allbal`: algorithm to run greedy updates by themselves, with `--npasses` the argument controlling the number of passes over the weights
+- `ldlbal_admm`: alternative algorithm which constraints the rounded weights to be sufficiently close to their original, giving a better theoretical bound.
 
 The `--incoh_processing` argument is a meta argument which sets the following flags `--pre_gptqH --pre_rescale --pre_proj --qfn b`. 
 For more control into the pre and post processing, these arguments can be set individually.

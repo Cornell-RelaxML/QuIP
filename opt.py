@@ -591,7 +591,7 @@ if __name__ == '__main__':
     # defaults to incoherence processing
     if args.incoh_processing:
         args.pre_gptqH   = True
-        args.pre_resclae = True
+        args.pre_rescale = True
         args.pre_proj    = True
         args.proj_extra  = 0
         args.qfn         = 'b'
@@ -623,7 +623,6 @@ if __name__ == '__main__':
             print("")
             print(f'Proxy Summary: Qmethod:{args.quant}, Unbiased: {args.unbiased}, W:{args.wbits}, NPass:{args.npasses}')
             print(f"Preproc: gptqH:{args.pre_gptqH}, rescale:{args.pre_rescale}, proj:{args.pre_proj}, qfn:{args.qfn}")
-            print(f"Total proxy (w^T H w) error: {sum(errors)}, len:{len(errors)}")
             print('Quantization done.')
             print("")
 
