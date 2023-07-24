@@ -45,6 +45,9 @@ CUDA_VISIBLE_DEVICES=0 python main.py facebook/opt-125m c4 --load <load_name> --
 To evaluate the quantiezd models on zeroshot tasks, simply provide the saved quantized model weights to the script.
 Evaluated tasks are {arc_easy, lambada, piqa, storycloze}.
 
+## Benchmarking
+Soon to come!
+
 
 ## OPTQ and LDLQ Equivalence
 Run the following script to empirically verify that the output of OPTQ's implemenation and our implemenation of LDLQ are identical: `python optq_ldlq_equiv.py`.
@@ -65,6 +68,3 @@ Run the following script to compute summary statistics of a folder `<dirname>` o
 ```
 python compute_Hsummary.py --dirname <> --savename <> 
 ```
-
-## Benchmarking
-Soon to come! 
