@@ -42,7 +42,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py facebook/opt-125m c4 --wbits 16 --nsamples
 # Evaluate saved model
 CUDA_VISIBLE_DEVICES=0 python main.py facebook/opt-125m c4 --load <load_name> --nsamples 0 --task <task>
 ```
-To evaluate the quantiezd models on zeroshot tasks, simply provide the saved quantized model weights to the script.
+To evaluate the quantized models on zeroshot tasks, simply provide the saved quantized model weights to the script.
 Evaluated tasks are {arc_easy, lambada, piqa, storycloze}.
 
 ## Benchmarking
@@ -51,7 +51,7 @@ Soon to come!
 
 ## OPTQ and LDLQ Equivalence
 Run the following script to empirically verify that the output of OPTQ's implemenation and our implemenation of LDLQ are identical: `python optq_ldlq_equiv.py`.
-Note OPTQ's iplementation requires running on a GPU.
+Note OPTQ's implementation requires running on a GPU.
 
 ## OTPQ/LDLQ Finite Grid Counterexample
 Run `python optq_counter.py` to compute the proxy loss of our W,H counterexample. 
