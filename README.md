@@ -1,6 +1,6 @@
 # QuIP: Quantization with Incoherence Processing
 
-This repository contains code for the paper [**QuIP: 2-Bit Quantization of Large Language Models with Guarantees**](todo). 
+This repository contains code for the paper [**QuIP: 2-Bit Quantization of Large Language Models with Guarantees**](https://arxiv.org/pdf/2307.13304.pdf). 
 
 **TLDR:** Our proposed incoherence processing enables quantization of large language models down to 2 bits.
 Please see our paper for full details.
