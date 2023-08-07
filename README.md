@@ -50,7 +50,7 @@ Soon to come!
 
 
 ## OPTQ and LDLQ Equivalence
-Run the following script to empirically verify that the output of OPTQ's implemenation and our implemenation of LDLQ are identical: `python optq_ldlq_equiv.py`.
+Run the following script to empirically verify that the output of OPTQ's implementation and our implementation of LDLQ are identical: `python optq_ldlq_equiv.py`.
 Note OPTQ's implementation requires running on a GPU.
 
 ## OTPQ/LDLQ Finite Grid Counterexample
