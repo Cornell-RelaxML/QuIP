@@ -593,7 +593,7 @@ if __name__ == '__main__':
         args.pre_gptqH   = True
         args.pre_rescale = True
         args.pre_proj    = True
-        args.proj_extra  = 0
+        args.proj_extra  = 1
         args.qfn         = 'b'
 
     if args.load:

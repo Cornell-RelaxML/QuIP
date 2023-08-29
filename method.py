@@ -129,7 +129,7 @@ class QuantMethod:
         run gptqH last
         preproc_proj_extra:
         0: 2 factor butterfly + permute
-        1: 2 factor butterfly + permute + no blocking
+        1: 2 factor butterfly + permute + no blocking (default)
         2: 2 factor butterfly + no permute
         3: random orthogonal
         """
