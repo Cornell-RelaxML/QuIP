@@ -94,6 +94,7 @@ class QuantMethod:
         self.H = torch.zeros((self.columns, self.columns), dtype=torch.float64, device=self.dev)
         self.nsamples = 0
         self.preproc_done = False
+        self.inps = []
 
     def add_batch(self, inp, out):
         if DEBUG:
@@ -116,6 +117,7 @@ class QuantMethod:
             inp = inp.permute([1, 0, 2])
             inp = inp.flatten(1)
         self.nsamples += tmp
+        self.inps.append(inp)
         inp = inp.to(torch.float64)
         self.H.add_(inp.matmul(inp.t()))
 
@@ -212,6 +214,34 @@ class QuantMethod:
             H = H * scaleWH[None,:]
             self.layer.weight.data = w.to(self.layer.weight.data.dtype)
             self.H.data = H.to(self.H.data.dtype)
+
+    def apply_weiner_filter(self, clean_W, Wien_res_rank):
+        self.inps = torch.stack(self.inps, dim=0).permute(0,2,1)
+        Q = self.layer.weight.data
+        rows = Q.shape[0]
+        x = nn.functional.linear(self.inps, clean_W).view(-1, rows).T
+        z = nn.functional.linear(self.inps, Q).view(-1, rows).T
+        a = self.tff @ x # mean_a will be zero, TFFs are already transposed, no need to transpose them again
+        n = z - a # mean_n will also be zero
+        var_x = x.var()
+        var_n = n.var()
+        num_samples = x.shape[1]
+        Rxz = x @ z.T / num_samples
+        Rzz = z @ z.T / num_samples
+        # True diagonal approximation + low rank
+        Weiner_F = var_x/(var_x + var_n) * self.tff.T
+        full_Weiner_F = Rxz @ torch.linalg.pinv(Rzz)
+        Weiner_residue = full_Weiner_F - Weiner_F
+        k = Wien_res_rank
+        if k == -1:
+            Weiner_res_approx = Weiner_residue
+        elif k == 0:
+            Weiner_res_approx = 0
+        else:
+            U, S, Vt = torch.linalg.svd(Weiner_residue)
+            Weiner_res_approx = torch.matmul(U[:, :k], torch.matmul(torch.diag(S[:k]), Vt[:k, :]))
+        Weiner_F = Weiner_F + Weiner_res_approx
+        self.layer.weight.data = Weiner_F @ Q
 
     def free(self):
         if DEBUG:

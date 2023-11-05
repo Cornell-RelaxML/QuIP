@@ -495,7 +495,6 @@ def round_vecbal_Hsort(
         w_hat = wp_hat[:, ip]
         return w_hat
 
-
 @torch.no_grad()
 def quantize_weight_vecbal(w,
                             H,
@@ -512,12 +511,14 @@ def quantize_weight_vecbal(w,
         return scale * (wr - zero)
         # note: don't want to return wr.half() for comparison
     elif qfn == 'a':
+        scale = scale * 0.65
         wr = torch.clamp((w/scale) + zero, 0, maxq)
         wr = round_vecbal_Hsort(
             wr, H, nbits, npasses, unbiased=unbiased, qmethod=qmethod, 
             lazy_batch=lazy_batch)
         wr = scale * (wr - zero)
-        return wr.half()
+        return wr
+        # return wr.half()
     elif qfn == 'b':
         scale = 2.4 * w.square().mean().sqrt() + 1e-16
         wr = w / scale
@@ -527,6 +528,7 @@ def quantize_weight_vecbal(w,
             lazy_batch=lazy_batch)
         wr = (wr / maxq) * 2 - 1
         wr = wr * scale
-        return wr.half()
+        # return wr.half()
+        return wr
     else:
         return NotImplementedError()
