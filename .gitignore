@@ -1,3 +1,6 @@
 data/
 output/
 __pycache__/
+
+# temp files
+*.pt

@@ -512,6 +512,7 @@ def quantize_weight_vecbal(w,
         # note: don't want to return wr.half() for comparison
     elif qfn == 'a':
         scale = scale * 0.65
+        breakpoint()
         wr = torch.clamp((w/scale) + zero, 0, maxq)
         wr = round_vecbal_Hsort(
             wr, H, nbits, npasses, unbiased=unbiased, qmethod=qmethod, 
