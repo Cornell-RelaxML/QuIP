@@ -149,6 +149,12 @@ def quantize_vit(model, dataloader, dev, args):
                                                mse=False)
                 tff_n = subset[name].weight.shape[0]
                 quant_method[name].tff = tffs[tff_n].view(-1, tff_n)
+                # # generate a random projection Matrix
+                # g_cpu = torch.Generator() # use this to store the seed for later
+                # rand_mat = torch.randn((tff_n, tff_n), generator=g_cpu)
+                # Q, R = torch.linalg.qr(rand_mat)
+                # quant_method[name].tff = tffs[tff_n].view(-1, tff_n) @ (Q.T).to(dev)
+                # quant_method[name].rand_mat = rand_mat
 
         def add_batch(name):
 
@@ -184,7 +190,7 @@ def quantize_vit(model, dataloader, dev, args):
             if args.quant == 'gptq':
                 quant_method[name].fasterquant(groupsize=args.groupsize)
             elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
-                quant_method[name].fasterquant(lazy_batch=args.lazy_batch)
+                quant_method[name].fasterquant(lazy_batch=args.lazy_batch, symm_scale=args.symm_scale)
             elif args.quant == 'nearest':
                 quant_method[name].fasterquant()
 
@@ -464,6 +470,10 @@ if __name__ == '__main__':
                         help="Redundancy in tffs")
     parser.add_argument('--wiener_filt_en', action='store_true',
                         help="enable the Wiener filter after TFF based quantization")
+    parser.add_argument('--symm_scale', action='store_true',
+                        help="enable for symmetrically scaling the weights")
+    parser.add_argument('--num_vals', type=int, default=1,
+                        help="num vals")
 
     parser.add_argument(
         '--percdamp',
@@ -662,7 +672,10 @@ if __name__ == '__main__':
 
     if not args.proxy_only:
         # val_acc = valid(args, model, writer=None, test_loader=test_loader, global_step=0)
-        val_acc = custom_val(model, test_loader, device)
-        print(f'intermediate val acc = {val_acc}')
-        logging.info(f'intermediate val acc = {val_acc}')
+        g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
+        test_loader = g.test_loader()
+        for i in range(args.num_vals):
+            val_acc = custom_val(model, test_loader, device)
+            print(f'intermediate val acc = {val_acc}')
+            logging.info(f'intermediate val acc = {val_acc}')
 

@@ -34,13 +34,19 @@
 # python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --qfn b --pre_gptqH
 
 # # different TFF versions
-python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a
+# python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a
 # python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a
 # python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_proj --pre_gptqH --qfn b
 # # full quip
 # python vit_quip.py --exp_name debug_thread --wbits 2 --quant ldlq --incoh_processing
 # # GPTQ
 # python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant gptq --qfn a --pre_gptqH
+
+# # TFF redundancy 2x
+# without symm scale
+# python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a --eval_batch_size 64 --tff_redundancy
+# with symm scale
+python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a --eval_batch_size 32 --tff_redundancy 2 --symm_scale
 
 # python vit.py --coef_est_type weiner --exp_name fullW_tff_vitFT_16 --wbits 16 --dataset inet1k_birds --dataset_dir data/inet1k_classes/birds \
 #  --ckpt_path output/olvi1_outputs/inet1k_birds-2023-10-02-22-25-22/inet1k_birds_final_ckpt.bin --parent_dir birds_vitFT 
