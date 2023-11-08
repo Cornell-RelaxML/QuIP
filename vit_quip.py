@@ -60,11 +60,31 @@ def setup(args):
 @torch.no_grad()
 def quantize_vit(model, dataloader, dev, args):
     print('Starting ...')
-    layers = model.transformer.encoder.layer
+    # layers = model.transformer.encoder.layer
+    # for batch in dataloader:
+    #     inps = model.transformer.embeddings(batch[0].to(device))
+    #     break
 
+    layers = model.blocks
+    dtype = next(iter(model.parameters())).dtype
+    inps = []
+    class Catcher(nn.Module):
+        def __init__(self, module):
+            super().__init__()
+            self.module = module
+
+        def forward(self, inp, **kwargs):
+            inps.append(inp)
+            raise ValueError
+
+    layers[0] = Catcher(layers[0])
     for batch in dataloader:
-        inps = model.transformer.embeddings(batch[0].to(device))
-        break
+        try:
+            model(batch[0].to(dev))
+        except ValueError:
+            break
+    inps = inps[0]
+    layers[0] = layers[0].module
 
     tffs = {}
     k_attn = int(96 * args.tff_redundancy)
@@ -75,6 +95,11 @@ def quantize_vit(model, dataloader, dev, args):
     k_mlp = int(384 * args.tff_redundancy)
     l_mlp = 8
     n_mlp = 3072
+    tffs[n_mlp] = construct_real_tff(k_mlp, l_mlp // 2, n_mlp // 2).to(dev)
+
+    k_mlp = int(288 * args.tff_redundancy)
+    l_mlp = 8
+    n_mlp = 2304
     tffs[n_mlp] = construct_real_tff(k_mlp, l_mlp // 2, n_mlp // 2).to(dev)
 
     outs = torch.zeros_like(inps)
@@ -165,8 +190,10 @@ def quantize_vit(model, dataloader, dev, args):
 
             # apply the Weiner filter
             if args.pre_tff:
-                # quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
-                quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
+                if args.wiener_filt_en:
+                    quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
+                else:
+                    quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
 
             quantizers['model.decoder.layers.%d.%s' %
                         (i, name)] = quant_method[name].quantizer
@@ -177,7 +204,9 @@ def quantize_vit(model, dataloader, dev, args):
             Hmags.append(quant_method[name].Hmag)
             quant_method[name].free()
 
-        outs = layer(inps)[0]
+        
+        # outs = layer(inps)[0]
+        outs = layer(inps)
 
         del layer
         del quant_method
@@ -371,6 +400,26 @@ def benchmark(model, input_ids, check=False):
         if check:
             print('PPL:', torch.exp(tot / (input_ids.numel() - 1)).item())
 
+def custom_val(net, test_set, device):
+    all_labels = []
+    all_preds = []
+    num_examples = 0
+    correct_counts = 0
+    for batch_idx, (images, labels) in tqdm(enumerate(test_set)):
+        images, labels = images.to(device), labels.to(device)
+        logits = net(images)
+        preds = torch.argmax(logits, dim=-1)
+
+        all_labels.append(labels.cpu().unbind())
+        all_preds.append(preds.cpu().unbind())
+        # all_preds.append(preds.cpu().item())
+        num_examples += len(labels)
+        correct_counts += sum(preds == labels)
+
+    val_acc = correct_counts  / num_examples
+    print(f'{name = }, {val_acc = }')
+    logging.info(f'{name = }, {val_acc = }')
+
 
 if __name__ == '__main__':
     import argparse
@@ -413,6 +462,8 @@ if __name__ == '__main__':
                         help="set the rank for the LowRank approximation of the residue after (Weiner - diag)")
     parser.add_argument('--tff_redundancy', type=int, default=1,
                         help="Redundancy in tffs")
+    parser.add_argument('--wiener_filt_en', action='store_true',
+                        help="enable the Wiener filter after TFF based quantization")
 
     parser.add_argument(
         '--percdamp',
@@ -552,11 +603,22 @@ if __name__ == '__main__':
         model = load_quant(args.model, args.load)
         model.eval()
     else:
-        args, model = setup(args)
+        # args, model = setup(args)
+        # model.eval()
+        import timm
+        import imageNet_utils as datasets
+
+        name = 'vit_base_patch16_224'
+        model = timm.create_model(name, pretrained=True).to(device)
         model.eval()
+        num_params = sum([p.numel() for p in model.parameters()])
+        print(f'num_params = {num_params/ 1e6}')
+        logging.info(f'num_params = {num_params/ 1e6}')
+        g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.train_batch_size,args.train_batch_size,16, kwargs={"model":model})
+        test_loader = g.test_loader()
 
         # Prepare dataset
-        train_loader, test_loader = get_loader(args)
+        # train_loader, test_loader = get_loader(args)
         # val_acc = valid(args, model, writer=None, test_loader=test_loader, global_step=0)
         # print(f'initial val acc = {val_acc}')
         # logging.info(f'initial val acc = {val_acc}')
@@ -571,7 +633,8 @@ if __name__ == '__main__':
                 print(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
 
             tick = time.time()
-            quantizers, errors = quantize_vit(model, train_loader, args.device, args)
+            # quantizers, errors = quantize_vit(model, train_loader, args.device, args)
+            quantizers, errors = quantize_vit(model, test_loader, args.device, args)
             print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
             print("")
             print(f'Proxy Summary: Qmethod:{args.quant}, Unbiased: {args.unbiased}, W:{args.wbits}, NPass:{args.npasses}')
@@ -598,7 +661,8 @@ if __name__ == '__main__':
         torch.save(model.state_dict(), os.path.join(directory_path, 'Qmodel.pth'))
 
     if not args.proxy_only:
-        val_acc = valid(args, model, writer=None, test_loader=test_loader, global_step=0)
+        # val_acc = valid(args, model, writer=None, test_loader=test_loader, global_step=0)
+        val_acc = custom_val(model, test_loader, device)
         print(f'intermediate val acc = {val_acc}')
         logging.info(f'intermediate val acc = {val_acc}')
 

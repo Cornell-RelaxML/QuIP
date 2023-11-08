@@ -4,3 +4,7 @@ __pycache__/
 
 # temp files
 *.pt
+*.png
+*.log
+*.txt
+*_torchviz

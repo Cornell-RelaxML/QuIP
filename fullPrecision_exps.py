@@ -7,10 +7,10 @@ from torch.utils.data import Dataset
 from PIL import Image
 import os
 import numpy as np
-from datasets import load_dataset
 import datetime
 from datetime import timedelta
 from datautils import set_seed
+from tqdm import tqdm
 
 import logging
 
@@ -97,8 +97,9 @@ if __name__ == '__main__':
         # Now you can iterate through the validation loader to get batches of images and their corresponding labels
         all_labels = []
         all_preds = []
-        num_batches = 100
-        for batch_idx, (images, labels) in enumerate(test_set):
+        num_examples = 0
+        correct_counts = 0
+        for batch_idx, (images, labels) in tqdm(enumerate(test_set)):
             images, labels = images.to(device), labels.to(device)
             logits = net(images)
             preds = torch.argmax(logits, dim=-1)
@@ -106,13 +107,10 @@ if __name__ == '__main__':
             all_labels.append(labels.cpu().unbind())
             all_preds.append(preds.cpu().unbind())
             # all_preds.append(preds.cpu().item())
-            if batch_idx == num_batches:
-                break
+            num_examples += len(labels)
+            correct_counts += sum(preds == labels)
 
-        all_labels = np.array(all_labels)
-        all_preds = np.array(all_preds)
-
-        val_acc = (all_labels == all_preds).mean()
+        val_acc = correct_counts  / num_examples
         print(f'{name = }, {val_acc = }')
         logging.info(f'{name = }, {val_acc = }')
 

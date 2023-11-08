@@ -232,7 +232,7 @@ class QuantMethod:
         Weiner_F = var_x/(var_x + var_n) * self.tff.T
         full_Weiner_F = Rxz @ torch.linalg.pinv(Rzz)
         Weiner_residue = full_Weiner_F - Weiner_F
-        k = Wien_res_rank
+        k = min([Wien_res_rank, Weiner_residue.shape[0], Weiner_residue.shape[1]])
         if k == -1:
             Weiner_res_approx = Weiner_residue
         elif k == 0:
