@@ -17,7 +17,7 @@ from datetime import timedelta
 import os
 import random
 import sys
-sys.path.append('../ViT-pytorch')
+# sys.path.append('../ViT-pytorch')
 from utils.data_utils import get_loader
 from utils.dist_util import get_world_size
 from utils.train_utils import AverageMeter, count_parameters, simple_accuracy
@@ -25,7 +25,6 @@ from utils.train_utils import AverageMeter, count_parameters, simple_accuracy
 from models.modeling import VisionTransformer, CONFIGS
 
 from utils.construct_tff import construct_real_tff
-from vit import valid
 
 def setup(args):
     # Prepare model
@@ -57,8 +56,61 @@ def setup(args):
     print(f'{num_params = }M')
     return args, model
 
+def valid(args, model, writer, test_loader, global_step):
+    # Validation!
+    eval_losses = AverageMeter()
+
+    logging.info("***** Running Validation *****")
+    logging.info("  Num steps = %d", len(test_loader))
+    logging.info("  Batch size = %d", args.eval_batch_size)
+
+    model.eval()
+    all_preds, all_label = [], []
+    epoch_iterator = tqdm(test_loader,
+                          desc="Validating... (loss=X.X)",
+                          bar_format="{l_bar}{r_bar}",
+                          dynamic_ncols=True,
+                          disable=args.local_rank not in [-1, 0])
+    loss_fct = torch.nn.CrossEntropyLoss()
+    for step, batch in enumerate(epoch_iterator):
+        batch = tuple(t.to(args.device) for t in batch)
+        x, y = batch
+        with torch.no_grad():
+            logits = model(x)[0]
+
+            eval_loss = loss_fct(logits, y)
+            eval_losses.update(eval_loss.item())
+
+            preds = torch.argmax(logits, dim=-1)
+
+        if len(all_preds) == 0:
+            all_preds.append(preds.detach().cpu().numpy())
+            all_label.append(y.detach().cpu().numpy())
+        else:
+            all_preds[0] = np.append(
+                all_preds[0], preds.detach().cpu().numpy(), axis=0
+            )
+            all_label[0] = np.append(
+                all_label[0], y.detach().cpu().numpy(), axis=0
+            )
+        epoch_iterator.set_description("Validating... (loss=%2.5f)" % eval_losses.val)
+
+    all_preds, all_label = all_preds[0], all_label[0]
+    accuracy = simple_accuracy(all_preds, all_label)
+
+    logging.info("\n")
+    logging.info("Validation Results")
+    logging.info("Global Steps: %d" % global_step)
+    logging.info("Valid Loss: %2.5f" % eval_losses.avg)
+    logging.info("Valid Accuracy: %2.5f" % accuracy)
+
+    if writer is not None:
+        print('writing')
+        writer.add_scalar("test/accuracy", scalar_value=accuracy, global_step=global_step)
+    return accuracy
+
 @torch.no_grad()
-def quantize_vit(model, dataloader, dev, args):
+def quantize_vit(model, data_batch, dev, args):
     print('Starting ...')
     # layers = model.transformer.encoder.layer
     # for batch in dataloader:
@@ -78,11 +130,10 @@ def quantize_vit(model, dataloader, dev, args):
             raise ValueError
 
     layers[0] = Catcher(layers[0])
-    for batch in dataloader:
-        try:
-            model(batch[0].to(dev))
-        except ValueError:
-            break
+    try:
+        model(train_batch[0].to(dev))
+    except ValueError:
+        pass
     inps = inps[0]
     layers[0] = layers[0].module
 
@@ -196,40 +247,40 @@ def quantize_vit(model, dataloader, dev, args):
 
             # apply the Weiner filter
             if args.pre_tff:
-                # if args.wiener_filt_en:
-                #     quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
-                # else:
-                #     quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
+                if args.wiener_filt_en:
+                    quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
+                else:
+                    quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
 
-                # run the linear quadratic program
-                import cvxpy as cp
+                # # run the linear quadratic program
+                # import cvxpy as cp
 
-                xs = []
-                qw = quant_method[name].layer.weight.data / quant_method[name].quantizer.scale
-                solve_failed_count = 0
-                solve_failed_indices = []
-                for i in tqdm(range(clean_W.shape[1])):
-                    x = cp.Variable((clean_W.shape[0], 1))
-                    cost = cp.sum_squares(torch.zeros((clean_W.shape[0], 1)))
-                    constraints = [quant_method[name].tff.cpu() @ x <= (qw[:,i][...,None] + 1).cpu()]
-                    constraints += [quant_method[name].tff.cpu() @ x >= (qw[:,i][...,None] ).cpu()]
-                    prob = cp.Problem(cp.Minimize(cost), constraints)
-                    prob.solve(solver=cp.ECOS, max_iters=10)
+                # xs = []
+                # qw = quant_method[name].layer.weight.data / quant_method[name].quantizer.scale
+                # solve_failed_count = 0
+                # solve_failed_indices = []
+                # for i in tqdm(range(clean_W.shape[1])):
+                #     x = cp.Variable((clean_W.shape[0], 1))
+                #     cost = cp.sum_squares(torch.zeros((clean_W.shape[0], 1)))
+                #     constraints = [quant_method[name].tff.cpu() @ x <= (qw[:,i][...,None] + 1).cpu()]
+                #     constraints += [quant_method[name].tff.cpu() @ x >= (qw[:,i][...,None] ).cpu()]
+                #     prob = cp.Problem(cp.Minimize(cost), constraints)
+                #     prob.solve(solver=cp.SCS, max_iters=2)
 
-                    print(x.value)
-                    if x.value is None:
-                        solve_failed_count += 1
-                        solve_failed_indices.append(i)
+                #     print(x.value)
+                #     if x.value is None:
+                #         solve_failed_count += 1
+                #         solve_failed_indices.append(i)
 
-                    # xs.append(torch.from_numpy(x.value))
+                #     # xs.append(torch.from_numpy(x.value))
 
-                    del x
-                    del cost
-                    del constraints
-                    del prob
+                #     del x
+                #     del cost
+                #     del constraints
+                #     del prob
 
                 # final_x = torch.cat(xs, dim=1) * quant_method[name].quantizer.scale
-                breakpoint()
+                # breakpoint()
 
 
             quantizers['model.decoder.layers.%d.%s' %
@@ -655,9 +706,8 @@ if __name__ == '__main__':
         num_params = sum([p.numel() for p in model.parameters()])
         print(f'num_params = {num_params/ 1e6}')
         logging.info(f'num_params = {num_params/ 1e6}')
-        g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
-        train_loader = g.train_loader()
-        test_loader = g.test_loader()
+        g=datasets.ViTImageNetLoaderGenerator('/home/harsha/imagenet2012','imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
+        train_batch = torch.load('./data/train_batch.pt')
 
         # Prepare dataset
         # train_loader, test_loader = get_loader(args)
@@ -675,7 +725,7 @@ if __name__ == '__main__':
                 print(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
 
             tick = time.time()
-            quantizers, errors = quantize_vit(model, train_loader, args.device, args)
+            quantizers, errors = quantize_vit(model, train_batch, args.device, args)
             # quantizers, errors = quantize_vit(model, test_loader, args.device, args)
             print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
             print("")
@@ -706,6 +756,7 @@ if __name__ == '__main__':
         # val_acc = valid(args, model, writer=None, test_loader=test_loader, global_step=0)
         # g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
         # test_loader = g.test_loader()
+        test_loader = g.test_loader()
         for i in range(args.num_vals):
             val_acc = custom_val(model, test_loader, device)
             print(f'intermediate val acc = {val_acc}')

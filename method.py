@@ -218,9 +218,10 @@ class QuantMethod:
     def apply_weiner_filter(self, clean_W, Wien_res_rank):
         self.inps = torch.stack(self.inps, dim=0).permute(0,2,1)
         Q = self.layer.weight.data
-        rows = Q.shape[0]
-        x = nn.functional.linear(self.inps, clean_W).view(-1, rows).T
-        z = nn.functional.linear(self.inps, Q).view(-1, rows).T
+        N = clean_W.shape[0]
+        L = Q.shape[0]
+        x = nn.functional.linear(self.inps, clean_W).view(-1, N).T
+        z = nn.functional.linear(self.inps, Q).view(-1, L).T
         a = self.tff @ x # mean_a will be zero, TFFs are already transposed, no need to transpose them again
         n = z - a # mean_n will also be zero
         var_x = x.var()
@@ -229,7 +230,10 @@ class QuantMethod:
         Rxz = x @ z.T / num_samples
         Rzz = z @ z.T / num_samples
         # True diagonal approximation + low rank
-        Weiner_F = var_x/(var_x + var_n) * self.tff.T
+        # # this works for redundancy of 1 only
+        # Weiner_F = var_x/(var_x + var_n) * self.tff.T
+        # # this works for any redundancy
+        Weiner_F = (var_x * self.tff.T) @ torch.linalg.pinv(var_x * self.tff @ self.tff.T + var_n)
         full_Weiner_F = Rxz @ torch.linalg.pinv(Rzz)
         Weiner_residue = full_Weiner_F - Weiner_F
         k = min([Wien_res_rank, Weiner_residue.shape[0], Weiner_residue.shape[1]])
