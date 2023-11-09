@@ -234,14 +234,16 @@ class QuantMethod:
         # Weiner_F = var_x/(var_x + var_n) * self.tff.T
         # # this works for any redundancy
         Weiner_F = (var_x * self.tff.T) @ torch.linalg.pinv(var_x * self.tff @ self.tff.T + var_n)
-        full_Weiner_F = Rxz @ torch.linalg.pinv(Rzz)
-        Weiner_residue = full_Weiner_F - Weiner_F
-        k = min([Wien_res_rank, Weiner_residue.shape[0], Weiner_residue.shape[1]])
-        if k == -1:
+        k = Wien_res_rank
+        if k == -1: # this means fullrank
+            full_Weiner_F = Rxz @ torch.linalg.pinv(Rzz)
+            Weiner_residue = full_Weiner_F - Weiner_F
             Weiner_res_approx = Weiner_residue
         elif k == 0:
             Weiner_res_approx = 0
         else:
+            full_Weiner_F = Rxz @ torch.linalg.pinv(Rzz)
+            Weiner_residue = full_Weiner_F - Weiner_F
             U, S, Vt = torch.linalg.svd(Weiner_residue)
             Weiner_res_approx = torch.matmul(U[:, :k], torch.matmul(torch.diag(S[:k]), Vt[:k, :]))
         Weiner_F = Weiner_F + Weiner_res_approx

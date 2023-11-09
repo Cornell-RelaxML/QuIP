@@ -21,10 +21,13 @@ import sys
 from utils.data_utils import get_loader
 from utils.dist_util import get_world_size
 from utils.train_utils import AverageMeter, count_parameters, simple_accuracy
+import timm
+import imageNet_utils as datasets
 
 from models.modeling import VisionTransformer, CONFIGS
 
 from utils.construct_tff import construct_real_tff
+import pickle as pkl
 
 def setup(args):
     # Prepare model
@@ -176,7 +179,8 @@ def quantize_vit(model, data_batch, dev, args):
                                                perchannel=True,
                                                sym=False,
                                                qfn=args.qfn,
-                                               mse=False)
+                                               mse=False, 
+                                               x_sigma= args.x_sigma)
             elif args.quant == 'nearest':
                 quant_method[name] = Nearest(subset[name])
                 quant_method[name].quantizer = Quantizer()
@@ -184,7 +188,8 @@ def quantize_vit(model, data_batch, dev, args):
                                                perchannel=True,
                                                sym=False,
                                                qfn=args.qfn,
-                                               mse=False)
+                                               mse=False,
+                                               x_sigma = args.x_sigma)
             elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
                 quant_method[name] = Balance(subset[name])
                 quant_method[name].configure(
@@ -197,7 +202,8 @@ def quantize_vit(model, data_batch, dev, args):
                                                perchannel=True,
                                                sym=False,
                                                qfn=args.qfn,
-                                               mse=False)
+                                               mse=False, 
+                                               x_sigma = args.x_sigma)
                 tff_n = subset[name].weight.shape[0]
                 quant_method[name].tff = tffs[tff_n].view(-1, tff_n)
                 # # generate a random projection Matrix
@@ -241,7 +247,7 @@ def quantize_vit(model, data_batch, dev, args):
             if args.quant == 'gptq':
                 quant_method[name].fasterquant(groupsize=args.groupsize)
             elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
-                quant_method[name].fasterquant(lazy_batch=args.lazy_batch, symm_scale=args.symm_scale)
+                quant_method[name].fasterquant(lazy_batch=args.lazy_batch)
             elif args.quant == 'nearest':
                 quant_method[name].fasterquant()
 
@@ -305,189 +311,6 @@ def quantize_vit(model, data_batch, dev, args):
     print(f'Total quant time: {sum(times):.2f}s')
     return quantizers, errors
 
-
-# TODO: perform packing on GPU
-def opt_pack3(model, quantizers):
-    layers = find_layers(model)
-    layers = {n: layers[n] for n in quantizers}
-    make_quant3(model, quantizers)
-    qlayers = find_layers(model, [Quant3Linear])
-    print('Packing ...')
-    for name in qlayers:
-        print(name)
-        quantizers[name] = quantizers[name].cpu()
-        qlayers[name].pack(layers[name], quantizers[name].scale,
-                           quantizers[name].zero)
-    print('Done.')
-    return model
-
-
-def load_quant3(model, checkpoint):
-    from transformers import OPTConfig, OPTForCausalLM
-    config = OPTConfig.from_pretrained(model)
-
-    def noop(*args, **kwargs):
-        pass
-
-    torch.nn.init.kaiming_uniform_ = noop
-    torch.nn.init.uniform_ = noop
-    torch.nn.init.normal_ = noop
-
-    torch.set_default_dtype(torch.half)
-    transformers.modeling_utils._init_weights = False
-    torch.set_default_dtype(torch.half)
-    model = OPTForCausalLM(config)
-    torch.set_default_dtype(torch.float)
-    model = model.eval()
-    layers = find_layers(model)
-    for name in [
-            'model.decoder.project_out', 'model.decoder.project_in', 'lm_head'
-    ]:
-        if name in layers:
-            del layers[name]
-    make_quant3(model, layers)
-
-    print('Loading model ...')
-    model.load_state_dict(torch.load(checkpoint))
-    model.seqlen = model.config.max_position_embeddings
-    print('Done.')
-
-    return model
-
-def load_quant(model, checkpoint):
-    from transformers import OPTConfig, OPTForCausalLM
-    config = OPTConfig.from_pretrained(model)
-
-    def noop(*args, **kwargs):
-        pass
-
-    torch.nn.init.kaiming_uniform_ = noop
-    torch.nn.init.uniform_ = noop
-    torch.nn.init.normal_ = noop
-
-    torch.set_default_dtype(torch.half)
-    transformers.modeling_utils._init_weights = False
-    torch.set_default_dtype(torch.half)
-    model = OPTForCausalLM(config)
-    torch.set_default_dtype(torch.float)
-    model = model.eval()
-    layers = find_layers(model)
-    for name in [
-            'model.decoder.project_out', 'model.decoder.project_in', 'lm_head'
-    ]:
-        if name in layers:
-            del layers[name]
-    # make_quant3(model, layers)
-
-
-    print('Loading model ...')
-    model.load_state_dict(torch.load(checkpoint))
-    model.seqlen = model.config.max_position_embeddings
-    print('Done.')
-
-    return model
-
-
-def opt_multigpu(model, gpus):
-    model.model.decoder.embed_tokens = model.model.decoder.embed_tokens.to(
-        gpus[0])
-    model.model.decoder.embed_positions = model.model.decoder.embed_positions.to(
-        gpus[0])
-    if hasattr(model.model.decoder,
-               'project_in') and model.model.decoder.project_in:
-        model.model.decoder.project_in = model.model.decoder.project_in.to(
-            gpus[0])
-    if hasattr(model.model.decoder,
-               'project_out') and model.model.decoder.project_out:
-        model.model.decoder.project_out = model.model.decoder.project_out.to(
-            gpus[-1])
-    if hasattr(model.model.decoder,
-               'final_layer_norm') and model.model.decoder.final_layer_norm:
-        model.model.decoder.final_layer_norm = model.model.decoder.final_layer_norm.to(
-            gpus[-1])
-    import copy
-    model.lm_head = copy.deepcopy(model.lm_head).to(gpus[-1])
-
-    cache = {'mask': None}
-
-    class MoveModule(nn.Module):
-
-        def __init__(self, module):
-            super().__init__()
-            self.module = module
-            self.dev = next(iter(self.module.parameters())).device
-
-        def forward(self, *inp, **kwargs):
-            inp = list(inp)
-            if inp[0].device != self.dev:
-                inp[0] = inp[0].to(self.dev)
-            if cache['mask'] is None or cache['mask'].device != self.dev:
-                cache['mask'] = kwargs['attention_mask'].to(self.dev)
-            kwargs['attention_mask'] = cache['mask']
-            tmp = self.module(*inp, **kwargs)
-            return tmp
-
-    layers = model.model.decoder.layers
-    pergpu = math.ceil(len(layers) / len(gpus))
-    for i in range(len(layers)):
-        layers[i] = MoveModule(layers[i].to(gpus[i // pergpu]))
-
-    model.gpus = gpus
-
-
-def benchmark(model, input_ids, check=False):
-    input_ids = input_ids.to(model.gpus[0] if hasattr(model, 'gpus') else DEV)
-    torch.cuda.synchronize()
-
-    cache = {'past': None}
-
-    def clear_past(i):
-
-        def tmp(layer, inp, out):
-            if cache['past']:
-                cache['past'][i] = None
-
-        return tmp
-
-    for i, layer in enumerate(model.model.decoder.layers):
-        layer.register_forward_hook(clear_past(i))
-
-    print('Benchmarking ...')
-
-    if check:
-        loss = nn.CrossEntropyLoss()
-        tot = 0.
-
-    def sync():
-        if hasattr(model, 'gpus'):
-            for gpu in model.gpus:
-                torch.cuda.synchronize(gpu)
-        else:
-            torch.cuda.synchronize()
-
-    with torch.no_grad():
-        attention_mask = torch.ones((1, input_ids.numel()), device=DEV)
-        times = []
-        for i in range(input_ids.numel()):
-            tick = time.time()
-            out = model(input_ids[:, i].reshape(-1),
-                        past_key_values=cache['past'],
-                        attention_mask=attention_mask[:, :(i + 1)].reshape(
-                            (1, -1)))
-            sync()
-            times.append(time.time() - tick)
-            print(i, times[-1])
-            if check and i != input_ids.numel() - 1:
-                tot += loss(out.logits[0].to(DEV),
-                            input_ids[:, (i + 1)].to(DEV)).float()
-            cache['past'] = list(out.past_key_values)
-            del out
-        sync()
-        import numpy as np
-        print('Median:', np.median(times))
-        if check:
-            print('PPL:', torch.exp(tot / (input_ids.numel() - 1)).item())
-
 def custom_val(net, test_set, device):
     all_labels = []
     all_preds = []
@@ -507,6 +330,8 @@ def custom_val(net, test_set, device):
     val_acc = correct_counts  / num_examples
     print(f'{name = }, {val_acc = }')
     logging.info(f'{name = }, {val_acc = }')
+
+    return val_acc
 
 
 if __name__ == '__main__':
@@ -552,10 +377,16 @@ if __name__ == '__main__':
                         help="Redundancy in tffs")
     parser.add_argument('--wiener_filt_en', action='store_true',
                         help="enable the Wiener filter after TFF based quantization")
-    parser.add_argument('--symm_scale', action='store_true',
-                        help="enable for symmetrically scaling the weights")
     parser.add_argument('--num_vals', type=int, default=1,
                         help="num vals")
+    parser.add_argument('--train_batch_path', type=str, default='./data/train_batch.pt',
+                        help="path to the train batch")
+    parser.add_argument('--dataset_path', type=str, default='/data/harsha/quantization/imagenet2012/',
+                        help="path to the dataset; Dataset must contain val folder for testing")
+    parser.add_argument("--timm_model_name", type=str, default='vit_base_patch16_224',
+                        help="name of the model to be loaded from timm")
+    parser.add_argument('--x_sigma', type=float, default=2,
+                        help="x times sigma for symm scale")
 
     parser.add_argument(
         '--percdamp',
@@ -609,7 +440,7 @@ if __name__ == '__main__':
     parser.add_argument('--qfn',
                         type=str,
                         default='a',
-                        help='qfn: a is default, b is sym incoherent based')
+                        help='qfn: a is default, b is sym incoherent based, s is tff symm scaling based')
     parser.add_argument('--save',
                         type=str,
                         default='',
@@ -667,6 +498,7 @@ if __name__ == '__main__':
         os.makedirs(directory_path, exist_ok=True)
 
         logging.basicConfig(filename= os.path.join(directory_path, 'log.log'), level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    log_values = {}
 
     # Setup CUDA, GPU & distributed training
     if args.local_rank == -1:
@@ -690,48 +522,58 @@ if __name__ == '__main__':
         print(f'{k}: {v}')
         logging.info(f'{k}: {v}')
 
-    if args.load:
-        # need to fix this
-        model = load_quant(args.model, args.load)
-        model.eval()
-    else:
-        # args, model = setup(args)
-        # model.eval()
-        import timm
-        import imageNet_utils as datasets
+    if exp_name != 'debug_thread':
+        with open(os.path.join(directory_path, 'args.pkl'), 'wb') as handle:
+            pkl.dump(vars(args), handle)
 
-        name = 'vit_base_patch16_224'
-        model = timm.create_model(name, pretrained=True).to(device)
-        model.eval()
-        num_params = sum([p.numel() for p in model.parameters()])
-        print(f'num_params = {num_params/ 1e6}')
-        logging.info(f'num_params = {num_params/ 1e6}')
-        g=datasets.ViTImageNetLoaderGenerator('/home/harsha/imagenet2012','imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
-        train_batch = torch.load('./data/train_batch.pt')
+    # args, model = setup(args)
+    # model.eval()
 
-        # Prepare dataset
-        # train_loader, test_loader = get_loader(args)
-        # val_acc = valid(args, model, writer=None, test_loader=test_loader, global_step=0)
-        # print(f'initial val acc = {val_acc}')
-        # logging.info(f'initial val acc = {val_acc}')
+    name = args.timm_model_name
+    model = timm.create_model(name, pretrained=True).to(device)
+    model.eval()
+    num_params = sum([p.numel() for p in model.parameters()])
+    print(f'num_params = {num_params/ 1e6}')
+    logging.info(f'num_params = {num_params/ 1e6}')
+    g=datasets.ViTImageNetLoaderGenerator(args.dataset_path,'imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
+    train_batch = torch.load(args.train_batch_path)
 
-        if args.wbits < 16:
-            # Preprocessing flags
-            # if args.qfn=='b': assert args.pre_proj is True
-            print(f"Preprocessing flags: gptqH:{args.pre_gptqH}, rescale:{args.pre_rescale}, proj:{args.pre_proj}, proj_extra:{args.pre_proj_extra}, qfn:{args.qfn}")
-            print(f"using lazy_batch updates: {args.lazy_batch}")
-            # LDL checks
-            if ('ldl' in args.quant) and args.unbiased and (args.npasses > 0):
-                print(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
+    log_values['model_name'] = name
+    log_values['num_params'] = num_params
 
-            tick = time.time()
-            quantizers, errors = quantize_vit(model, train_batch, args.device, args)
-            # quantizers, errors = quantize_vit(model, test_loader, args.device, args)
-            print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
-            print("")
-            print(f'Proxy Summary: Qmethod:{args.quant}, Unbiased: {args.unbiased}, W:{args.wbits}, NPass:{args.npasses}')
-            print('Quantization done.')
-            print("")
+    # Prepare dataset
+    # train_loader, test_loader = get_loader(args)
+    # val_acc = valid(args, model, writer=None, test_loader=test_loader, global_step=0)
+    # print(f'initial val acc = {val_acc}')
+    # logging.info(f'initial val acc = {val_acc}')
+
+    if args.wbits < 16:
+        # Preprocessing flags
+        # if args.qfn=='b': assert args.pre_proj is True
+        print(f"Preprocessing flags: gptqH:{args.pre_gptqH}, rescale:{args.pre_rescale}, proj:{args.pre_proj}, proj_extra:{args.pre_proj_extra}, qfn:{args.qfn}")
+        print(f"using lazy_batch updates: {args.lazy_batch}")
+        logging.info(f"Preprocessing flags: gptqH:{args.pre_gptqH}, rescale:{args.pre_rescale}, proj:{args.pre_proj}, proj_extra:{args.pre_proj_extra}, qfn:{args.qfn}")
+        logging.info(f"using lazy_batch updates: {args.lazy_batch}")
+        # LDL checks
+        if ('ldl' in args.quant) and args.unbiased and (args.npasses > 0):
+            print(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
+            logging.info(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
+
+        tick = time.time()
+        quantizers, errors = quantize_vit(model, train_batch, args.device, args)
+        # quantizers, errors = quantize_vit(model, test_loader, args.device, args)
+        print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
+        print("")
+        print(f'Proxy Summary: Qmethod:{args.quant}, Unbiased: {args.unbiased}, W:{args.wbits}, NPass:{args.npasses}')
+        print('Quantization done.')
+        print("")
+        total_quant_time = time.time() - tick
+        log_values['total_quant_time'] = total_quant_time
+        logging.info(f'Total quant + H time elapsed: {total_quant_time:.2f}s')
+        logging.info("")
+        logging.info(f'Proxy Summary: Qmethod:{args.quant}, Unbiased: {args.unbiased}, W:{args.wbits}, NPass:{args.npasses}')
+        logging.info('Quantization done.')
+        logging.info("")
 
     # if args.benchmark:
     #     gpus = [
@@ -750,6 +592,7 @@ if __name__ == '__main__':
 
     if exp_name != 'debug_thread':
     #     opt_pack3(model, quantizers)
+        # save the model
         torch.save(model.state_dict(), os.path.join(directory_path, 'Qmodel.pth'))
 
     if not args.proxy_only:
@@ -762,3 +605,10 @@ if __name__ == '__main__':
             print(f'intermediate val acc = {val_acc}')
             logging.info(f'intermediate val acc = {val_acc}')
 
+
+    # save the results
+    if exp_name != 'debug_thread':
+        log_values['val_acc'] = val_acc
+        log_values['args'] = args
+        with open(os.path.join(directory_path, 'log_values.pkl'), 'wb') as handle:
+            pkl.dump(log_values, handle)

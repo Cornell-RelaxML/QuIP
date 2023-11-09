@@ -511,9 +511,6 @@ def quantize_weight_vecbal(w,
         return scale * (wr - zero)
         # note: don't want to return wr.half() for comparison
     elif qfn == 'a':
-        # scale = scale * 0.65 # this works for the birds dataset
-        # scale = scale * 0.75 # this works for the birds dataset
-        # breakpoint()
         wr = torch.clamp((w/scale) + zero, 0, maxq)
         wr = round_vecbal_Hsort(
             wr, H, nbits, npasses, unbiased=unbiased, qmethod=qmethod, 
@@ -532,5 +529,16 @@ def quantize_weight_vecbal(w,
         wr = wr * scale
         # return wr.half()
         return wr
+    elif qfn == 's':
+        # scale = scale * 0.65 # this works for the birds dataset
+        # scale = scale * 0.75 # this works for the birds dataset
+        # breakpoint()
+        wr = torch.clamp((w/scale) + zero, 0, maxq)
+        wr = round_vecbal_Hsort(
+            wr, H, nbits, npasses, unbiased=unbiased, qmethod=qmethod, 
+            lazy_batch=lazy_batch)
+        wr = scale * (wr - zero)
+        return wr
+        # return wr.half()
     else:
         return NotImplementedError()

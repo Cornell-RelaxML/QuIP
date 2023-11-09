@@ -36,7 +36,8 @@ class Quantizer(nn.Module):
                   mse=False,
                   norm=2.4,
                   grid=100,
-                  maxshrink=.8):
+                  maxshrink=.8, 
+                  x_sigma = None):
         self.maxq = torch.tensor(2**bits - 1)
         self.perchannel = perchannel
         self.sym = sym
@@ -45,6 +46,7 @@ class Quantizer(nn.Module):
         self.norm = norm
         self.grid = grid
         self.maxshrink = maxshrink
+        self.x_sigma = x_sigma # this is only used when symm scale is enabled with tffs based scaling
 
     def find_params(self, x, weight=False):
         if self.qfn == 'a':
@@ -53,6 +55,8 @@ class Quantizer(nn.Module):
             self.find_params_qfnb(x)
         elif self.qfn == 'c':
             self.find_params_qfna(x, weight=weight)
+        elif self.qfn == 's':
+            self.find_symm_params(x, weight=weight)
 
     def find_params_qfna(self, x, weight=False):
         dev = x.device
@@ -169,7 +173,7 @@ class Quantizer(nn.Module):
 
         xvar = x.var(dim=1, keepdim=True)
         xstd = torch.sqrt(xvar)
-        self.scale = 2*xstd/(self.maxq/2)
+        self.scale = self.x_sigma*xstd/(self.maxq/2)
 
         if self.sym:
             self.zero = torch.full_like(self.scale, (self.maxq + 1) / 2)
@@ -237,6 +241,9 @@ class Quantizer(nn.Module):
             # for LDL vs GPTQ equivalency, does round in same order as bal code
             assert self.ready()
             return quantize_qfnc(x, self.scale, self.zero, self.maxq)
+        elif self.qfn == 's':
+            assert self.ready()
+            return quantize_qfna(x, self.scale, self.zero, self.maxq)
         else:
             return NotImplementedError()
 

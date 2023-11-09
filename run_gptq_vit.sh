@@ -46,9 +46,9 @@
 # without symm scale
 # python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a --eval_batch_size 32 --tff_redundancy 2
 # with symm scale
-# python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a --eval_batch_size 32 --tff_redundancy 2 --symm_scale
+# python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a --eval_batch_size 32 --tff_redundancy 2
 # with wiener filter cI
-python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a --eval_batch_size 32 --tff_redundancy 2 --wiener_filt_en
+python vit_quip.py --coef_est_type weiner --exp_name debug_thread --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn a --eval_batch_size 16 --tff_redundancy 2 --wiener_filt_en
 
 # python vit.py --coef_est_type weiner --exp_name fullW_tff_vitFT_16 --wbits 16 --dataset inet1k_birds --dataset_dir data/inet1k_classes/birds \
 #  --ckpt_path output/olvi1_outputs/inet1k_birds-2023-10-02-22-25-22/inet1k_birds_final_ckpt.bin --parent_dir birds_vitFT 

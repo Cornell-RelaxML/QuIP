@@ -18,7 +18,7 @@ class Balance(QuantMethod):
         self.npasses = npasses
         self.unbiased = unbiased
 
-    def fasterquant(self, lazy_batch=False, symm_scale=False):
+    def fasterquant(self, lazy_batch=False):
         w = self.layer.weight.data.clone()
         if isinstance(self.layer, nn.Conv2d):
             raise NotImplementedError()
@@ -26,10 +26,7 @@ class Balance(QuantMethod):
             raise NotImplementedError()
         tick = time.time()
         if not self.quantizer.ready():
-            if symm_scale:
-                self.quantizer.find_symm_params(w, weight=True)
-            else:
-                self.quantizer.find_params(w, weight=True)
+            self.quantizer.find_params(w, weight=True)
         H = self.H.data.clone()
 
         quant_w = quantize_weight_vecbal(
