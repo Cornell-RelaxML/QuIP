@@ -166,7 +166,7 @@ def quantize_vit(model, dataloader, dev, args):
         handles = []
         for name in subset:
             handles.append(subset[name].register_forward_hook(add_batch(name)))
-        for j in range(args.nsamples):
+        for j in range(args.train_batch_size):
             outs[j] = layer(inps[j].unsqueeze(0))[0]
         for h in handles:
             h.remove()
@@ -196,10 +196,41 @@ def quantize_vit(model, dataloader, dev, args):
 
             # apply the Weiner filter
             if args.pre_tff:
-                if args.wiener_filt_en:
-                    quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
-                else:
-                    quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
+                # if args.wiener_filt_en:
+                #     quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
+                # else:
+                #     quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
+
+                # run the linear quadratic program
+                import cvxpy as cp
+
+                xs = []
+                qw = quant_method[name].layer.weight.data / quant_method[name].quantizer.scale
+                solve_failed_count = 0
+                solve_failed_indices = []
+                for i in tqdm(range(clean_W.shape[1])):
+                    x = cp.Variable((clean_W.shape[0], 1))
+                    cost = cp.sum_squares(torch.zeros((clean_W.shape[0], 1)))
+                    constraints = [quant_method[name].tff.cpu() @ x <= (qw[:,i][...,None] + 1).cpu()]
+                    constraints += [quant_method[name].tff.cpu() @ x >= (qw[:,i][...,None] ).cpu()]
+                    prob = cp.Problem(cp.Minimize(cost), constraints)
+                    prob.solve(solver=cp.ECOS, max_iters=10)
+
+                    print(x.value)
+                    if x.value is None:
+                        solve_failed_count += 1
+                        solve_failed_indices.append(i)
+
+                    # xs.append(torch.from_numpy(x.value))
+
+                    del x
+                    del cost
+                    del constraints
+                    del prob
+
+                # final_x = torch.cat(xs, dim=1) * quant_method[name].quantizer.scale
+                breakpoint()
+
 
             quantizers['model.decoder.layers.%d.%s' %
                         (i, name)] = quant_method[name].quantizer
@@ -624,7 +655,8 @@ if __name__ == '__main__':
         num_params = sum([p.numel() for p in model.parameters()])
         print(f'num_params = {num_params/ 1e6}')
         logging.info(f'num_params = {num_params/ 1e6}')
-        g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.train_batch_size,args.train_batch_size,16, kwargs={"model":model})
+        g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
+        train_loader = g.train_loader()
         test_loader = g.test_loader()
 
         # Prepare dataset
@@ -643,8 +675,8 @@ if __name__ == '__main__':
                 print(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
 
             tick = time.time()
-            # quantizers, errors = quantize_vit(model, train_loader, args.device, args)
-            quantizers, errors = quantize_vit(model, test_loader, args.device, args)
+            quantizers, errors = quantize_vit(model, train_loader, args.device, args)
+            # quantizers, errors = quantize_vit(model, test_loader, args.device, args)
             print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
             print("")
             print(f'Proxy Summary: Qmethod:{args.quant}, Unbiased: {args.unbiased}, W:{args.wbits}, NPass:{args.npasses}')
@@ -672,8 +704,8 @@ if __name__ == '__main__':
 
     if not args.proxy_only:
         # val_acc = valid(args, model, writer=None, test_loader=test_loader, global_step=0)
-        g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
-        test_loader = g.test_loader()
+        # g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
+        # test_loader = g.test_loader()
         for i in range(args.num_vals):
             val_acc = custom_val(model, test_loader, device)
             print(f'intermediate val acc = {val_acc}')
