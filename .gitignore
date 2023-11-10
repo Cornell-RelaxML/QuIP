@@ -8,3 +8,4 @@ __pycache__/
 *.log
 *.txt
 *_torchviz
+*.model

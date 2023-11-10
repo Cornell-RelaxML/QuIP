@@ -257,6 +257,9 @@ def quantize_vit(model, data_batch, dev, args):
                         (i, name)] = quant_method[name].quantizer
             quantized_weights['model.decoder.layers.%d.%s' %
                         (i, name)] = quant_method[name].layer.weight.data.clone().cpu()
+
+            # log the layer name
+            logging.info(f'quantized model.decoder.layers.{i}.{name}')
             # apply the Weiner filter
             wiener_params_i = None
             if args.pre_tff:
