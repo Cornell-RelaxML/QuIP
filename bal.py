@@ -29,7 +29,7 @@ class Balance(QuantMethod):
             self.quantizer.find_params(w, weight=True)
         H = self.H.data.clone()
 
-        quant_w = quantize_weight_vecbal(
+        quant_w, clamped_proj = quantize_weight_vecbal(
             w=w, H=H,
             nbits=self.nbits,
             npasses=self.npasses,
@@ -46,4 +46,4 @@ class Balance(QuantMethod):
         # print('time %.2f' % (time.time() - tick))
         self.time = time.time() - tick
         self.error_compute(w, quant_w)
-
+        self.clamped_proj = clamped_proj

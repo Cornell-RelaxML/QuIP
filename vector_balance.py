@@ -508,7 +508,7 @@ def quantize_weight_vecbal(w,
                             ):
     if (qfn == 'a') and (qmethod == 'ldl_gptqequiv'):
         wr = round_ldl_gptqequiv((w/scale) + zero, H, nbits=nbits)
-        return scale * (wr - zero)
+        return scale * (wr - zero), None
         # note: don't want to return wr.half() for comparison
     elif qfn == 'a':
         wr = torch.clamp((w/scale) + zero, 0, maxq)
@@ -516,7 +516,7 @@ def quantize_weight_vecbal(w,
             wr, H, nbits, npasses, unbiased=unbiased, qmethod=qmethod, 
             lazy_batch=lazy_batch)
         wr = scale * (wr - zero)
-        return wr
+        return wr, None
         # return wr.half()
     elif qfn == 'b':
         scale = 2.4 * w.square().mean().sqrt() + 1e-16
@@ -528,17 +528,18 @@ def quantize_weight_vecbal(w,
         wr = (wr / maxq) * 2 - 1
         wr = wr * scale
         # return wr.half()
-        return wr
+        return wr, None
     elif qfn == 's':
         # scale = scale * 0.65 # this works for the birds dataset
         # scale = scale * 0.75 # this works for the birds dataset
         # breakpoint()
         wr = torch.clamp((w/scale) + zero, 0, maxq)
+        clamped_projs = (wr - zero) * scale
         wr = round_vecbal_Hsort(
             wr, H, nbits, npasses, unbiased=unbiased, qmethod=qmethod, 
             lazy_batch=lazy_batch)
         wr = scale * (wr - zero)
-        return wr
+        return wr, clamped_projs
         # return wr.half()
     else:
         return NotImplementedError()

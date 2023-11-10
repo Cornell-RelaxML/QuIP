@@ -226,6 +226,7 @@ class QuantMethod:
         n = z - a # mean_n will also be zero
         var_x = x.var()
         var_n = n.var()
+        results = {'var_x' : var_x, 'var_n' : var_n}
         num_samples = x.shape[1]
         Rxz = x @ z.T / num_samples
         Rzz = z @ z.T / num_samples
@@ -246,8 +247,14 @@ class QuantMethod:
             Weiner_residue = full_Weiner_F - Weiner_F
             U, S, Vt = torch.linalg.svd(Weiner_residue)
             Weiner_res_approx = torch.matmul(U[:, :k], torch.matmul(torch.diag(S[:k]), Vt[:k, :]))
+            results['u'] = U[:, :k].detach().cpu()
+            results['s'] = S[:k].detach().cpu()
+            results['v'] = Vt[:k, :].detach().cpu()
         Weiner_F = Weiner_F + Weiner_res_approx
         self.layer.weight.data = Weiner_F @ Q
+
+        return results
+
 
     def free(self):
         if DEBUG:

@@ -164,6 +164,8 @@ def quantize_vit(model, data_batch, dev, args):
     WFs[n_mlp] = {'Rxz':torch.zeros(n_mlp, n_mlp), 'Rzz':torch.zeros(n_mlp, n_mlp), 'first': True, 'num_samples': 0}
 
     quantizers = {}
+    quantized_weights = {}
+    Wiener_params = {}
     errors, Hmags, times = [], [], []
     for i in tqdm(range(len(layers))):
         layer = layers[i].to(dev)
@@ -251,12 +253,40 @@ def quantize_vit(model, data_batch, dev, args):
             elif args.quant == 'nearest':
                 quant_method[name].fasterquant()
 
+            quantizers['model.decoder.layers.%d.%s' %
+                        (i, name)] = quant_method[name].quantizer
+            quantized_weights['model.decoder.layers.%d.%s' %
+                        (i, name)] = quant_method[name].layer.weight.data.clone().cpu()
             # apply the Weiner filter
+            wiener_params_i = None
             if args.pre_tff:
                 if args.wiener_filt_en:
-                    quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
+                    wiener_params_i = quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
                 else:
                     quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
+
+            Wiener_params['model.decoder.layers.%d.%s' %
+                        (i, name)] = wiener_params_i
+
+                # # implement the Wiener filter based on the clamped noise
+                # x = clean_W
+                # z = clamped_projs
+                # a = quant_method[name].tff @ x 
+                # n = z - a
+                # var_x = x.var()
+                # var_n = n.var()
+                # Wiener_F = (var_x * quant_method[name].tff.T) @ torch.linalg.pinv(var_x * quant_method[name].tff @ quant_method[name].tff.T + var_n)
+                # num_samples = clean_W.shape[1]
+                # Rxz = clean_W @ clamped_projs.T / num_samples
+                # Rzz = clamped_projs @ clamped_projs.T / num_samples
+                # full_Wiener_F = Rxz @ torch.linalg.pinv(Rzz)
+                # Wiener_residue = full_Wiener_F - Wiener_F
+                # U, S, Vt = torch.linalg.svd(Wiener_residue)
+                # k=5
+                # Wiener_res_approx = torch.matmul(U[:, :k], torch.matmul(torch.diag(S[:k]), Vt[:k, :]))
+                # Wiener_F = Wiener_F + Wiener_res_approx
+
+                # quant_method[name].layer.weight.data = Wiener_F @ quant_method[name].layer.weight.data
 
                 # # run the linear quadratic program
                 # import cvxpy as cp
@@ -287,10 +317,6 @@ def quantize_vit(model, data_batch, dev, args):
 
                 # final_x = torch.cat(xs, dim=1) * quant_method[name].quantizer.scale
                 # breakpoint()
-
-
-            quantizers['model.decoder.layers.%d.%s' %
-                        (i, name)] = quant_method[name].quantizer
             # 
 
             errors.append(quant_method[name].error)
@@ -309,7 +335,7 @@ def quantize_vit(model, data_batch, dev, args):
         inps, outs = outs, inps
 
     print(f'Total quant time: {sum(times):.2f}s')
-    return quantizers, errors
+    return quantizers, errors, quantized_weights, Wiener_params
 
 def custom_val(net, test_set, device):
     all_labels = []
@@ -560,7 +586,7 @@ if __name__ == '__main__':
             logging.info(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
 
         tick = time.time()
-        quantizers, errors = quantize_vit(model, train_batch, args.device, args)
+        quantizers, errors, quantized_weights, Wiener_params = quantize_vit(model, train_batch, args.device, args)
         # quantizers, errors = quantize_vit(model, test_loader, args.device, args)
         print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
         print("")
@@ -594,6 +620,8 @@ if __name__ == '__main__':
     #     opt_pack3(model, quantizers)
         # save the model
         torch.save(model.state_dict(), os.path.join(directory_path, 'Qmodel.pth'))
+        mdict = {'quantizers': quantizers, 'errors':errors, 'quantized_weights':quantized_weights, 'Wiener_params':Wiener_params}
+        torch.save(mdict, os.path.join(directory_path, 'Qparams.pth'))
 
     if not args.proxy_only:
         # val_acc = valid(args, model, writer=None, test_loader=test_loader, global_step=0)
