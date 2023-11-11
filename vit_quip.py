@@ -113,7 +113,7 @@ def valid(args, model, writer, test_loader, global_step):
     return accuracy
 
 @torch.no_grad()
-def quantize_vit(model, data_batch, dev, args):
+def quantize_vit(model, tff_ns, data_batch, dev, args):
     print('Starting ...')
     # layers = model.transformer.encoder.layer
     # for batch in dataloader:
@@ -141,27 +141,14 @@ def quantize_vit(model, data_batch, dev, args):
     layers[0] = layers[0].module
 
     tffs = {}
-    k_attn = int(96 * args.tff_redundancy)
-    l_attn = 8
-    n_attn = 768
-    tffs[n_attn] = construct_real_tff(k_attn, l_attn // 2, n_attn // 2).to(dev)
-
-    k_mlp = int(384 * args.tff_redundancy)
-    l_mlp = 8
-    n_mlp = 3072
-    tffs[n_mlp] = construct_real_tff(k_mlp, l_mlp // 2, n_mlp // 2).to(dev)
-
-    k_mlp = int(288 * args.tff_redundancy)
-    l_mlp = 8
-    n_mlp = 2304
-    tffs[n_mlp] = construct_real_tff(k_mlp, l_mlp // 2, n_mlp // 2).to(dev)
+    for n in tff_ns:
+        n_attn = n
+        l_attn = 8
+        k_attn = int(n_attn // l_attn * args.tff_redundancy)
+        tffs[n_attn] = construct_real_tff(k_attn, l_attn // 2, n_attn // 2).to(dev)
 
     outs = torch.zeros_like(inps)
     print('Ready.')
-
-    WFs = {}
-    WFs[n_attn] = {'Rxz':torch.zeros(n_attn, n_attn), 'Rzz':torch.zeros(n_attn, n_attn), 'first': True, 'num_samples': 0}
-    WFs[n_mlp] = {'Rxz':torch.zeros(n_mlp, n_mlp), 'Rzz':torch.zeros(n_mlp, n_mlp), 'first': True, 'num_samples': 0}
 
     quantizers = {}
     quantized_weights = {}
@@ -239,6 +226,7 @@ def quantize_vit(model, data_batch, dev, args):
             # print('Quantizing ...')
 
             # project onto the frames
+            breakpoint()
             if args.pre_tff:
                 clean_W = quant_method[name].layer.weight.data.clone()
                 quant_method[name].layer.weight.data = quant_method[name].tff @ clean_W
@@ -265,31 +253,38 @@ def quantize_vit(model, data_batch, dev, args):
             if args.pre_tff:
                 if args.wiener_filt_en:
                     wiener_params_i = quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
+                elif args.clamp_noise_filt_en:
+                    # implement the Wiener filter based on the clamped noise
+                    clamped_projs = quant_method[name].clamped_proj
+                    x = clean_W
+                    z = clamped_projs
+                    a = quant_method[name].tff @ x 
+                    n = z - a
+                    var_x = x.var()
+                    var_n = n.var()
+                    Wiener_F = (var_x * quant_method[name].tff.T) @ torch.linalg.pinv(var_x * quant_method[name].tff @ quant_method[name].tff.T + var_n)
+                    k=args.Weiner_m_diag_rank
+                    if k != 0:
+                        num_samples = clean_W.shape[1]
+                        Rxz = clean_W @ clamped_projs.T / num_samples
+                        Rzz = clamped_projs @ clamped_projs.T / num_samples
+                        full_Wiener_F = Rxz @ torch.linalg.pinv(Rzz)
+                        Wiener_residue = full_Wiener_F - Wiener_F
+                        U, S, Vt = torch.linalg.svd(Wiener_residue)
+                        Wiener_res_approx = torch.matmul(U[:, :k], torch.matmul(torch.diag(S[:k]), Vt[:k, :]))
+                    else:
+                        Wiener_res_approx = 0
+                    Wiener_F = Wiener_F + Wiener_res_approx
+                    # Wiener_F = Wiener_res_approx
+
+                    quant_method[name].layer.weight.data = Wiener_F @ quant_method[name].layer.weight.data
                 else:
                     quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
 
+
+
             Wiener_params['model.decoder.layers.%d.%s' %
                         (i, name)] = wiener_params_i
-
-                # # implement the Wiener filter based on the clamped noise
-                # x = clean_W
-                # z = clamped_projs
-                # a = quant_method[name].tff @ x 
-                # n = z - a
-                # var_x = x.var()
-                # var_n = n.var()
-                # Wiener_F = (var_x * quant_method[name].tff.T) @ torch.linalg.pinv(var_x * quant_method[name].tff @ quant_method[name].tff.T + var_n)
-                # num_samples = clean_W.shape[1]
-                # Rxz = clean_W @ clamped_projs.T / num_samples
-                # Rzz = clamped_projs @ clamped_projs.T / num_samples
-                # full_Wiener_F = Rxz @ torch.linalg.pinv(Rzz)
-                # Wiener_residue = full_Wiener_F - Wiener_F
-                # U, S, Vt = torch.linalg.svd(Wiener_residue)
-                # k=5
-                # Wiener_res_approx = torch.matmul(U[:, :k], torch.matmul(torch.diag(S[:k]), Vt[:k, :]))
-                # Wiener_F = Wiener_F + Wiener_res_approx
-
-                # quant_method[name].layer.weight.data = Wiener_F @ quant_method[name].layer.weight.data
 
                 # # run the linear quadratic program
                 # import cvxpy as cp
@@ -402,10 +397,12 @@ if __name__ == '__main__':
                         help="parent dir for storing the results")
     parser.add_argument("--Weiner_m_diag_rank", type=int, default=3,
                         help="set the rank for the LowRank approximation of the residue after (Weiner - diag)")
-    parser.add_argument('--tff_redundancy', type=int, default=1,
+    parser.add_argument('--tff_redundancy', type=float, default=1,
                         help="Redundancy in tffs")
     parser.add_argument('--wiener_filt_en', action='store_true',
                         help="enable the Wiener filter after TFF based quantization")
+    parser.add_argument('--clamp_noise_filt_en', action='store_true',
+                        help="Wiener filter based clamping noise filter")
     parser.add_argument('--num_vals', type=int, default=1,
                         help="num vals")
     parser.add_argument('--train_batch_path', type=str, default='./data/train_batch.pt',
@@ -558,12 +555,24 @@ if __name__ == '__main__':
     # args, model = setup(args)
     # model.eval()
 
+    # get the different tff_n values for different models
+    tff_ns_all = {  'vit_tiny_patch16_224': [576, 192, 768],
+                'vit_small_patch16_224': [1152, 384, 1536],
+                'vit_small_patch32_224': [1152, 384, 1536],
+                'vit_base_patch16_224': [2304, 768, 3072],
+                'deit_tiny_patch16_224': [576, 192, 768],
+                'deit_small_patch16_224': [1152, 384, 1536],
+                'deit_base_patch16_224': [2304, 768, 3072]}
+
     name = args.timm_model_name
     model = timm.create_model(name, pretrained=True).to(device)
     model.eval()
     num_params = sum([p.numel() for p in model.parameters()])
     print(f'num_params = {num_params/ 1e6}')
     logging.info(f'num_params = {num_params/ 1e6}')
+
+    tff_ns = tff_ns_all[name]
+
     g=datasets.ViTImageNetLoaderGenerator(args.dataset_path,'imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
     train_batch = torch.load(args.train_batch_path)
 
@@ -589,7 +598,7 @@ if __name__ == '__main__':
             logging.info(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
 
         tick = time.time()
-        quantizers, errors, quantized_weights, Wiener_params = quantize_vit(model, train_batch, args.device, args)
+        quantizers, errors, quantized_weights, Wiener_params = quantize_vit(model, tff_ns, train_batch, args.device, args)
         # quantizers, errors = quantize_vit(model, test_loader, args.device, args)
         print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
         print("")
