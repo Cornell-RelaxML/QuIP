@@ -160,15 +160,20 @@ class QuantMethod:
             w = self.layer.weight.data.clone().to(torch.float32)
             H = self.H.data.clone().to(torch.float32)
             # 
-            if preproc_proj_extra == 0:
-                U = rand_ortho_butterfly(w.shape[0]).to(torch.float32).to(w.device)
-                V = rand_ortho_butterfly(w.shape[1]).to(torch.float32).to(w.device)
-            elif preproc_proj_extra == 1:
-                U = rand_ortho_butterfly_noblock(w.shape[0]).to(torch.float32).to(w.device)
-                V = rand_ortho_butterfly_noblock(w.shape[1]).to(torch.float32).to(w.device)
-            elif preproc_proj_extra == 2:
-                U = rand_ortho_butterfly_nopermute(w.shape[0]).to(torch.float32).to(w.device)
-                V = rand_ortho_butterfly_nopermute(w.shape[1]).to(torch.float32).to(w.device)
+            if hasattr(self, 'U'):
+                # we are doing the TFF based thing
+                U = self.U
+                V = self.V
+            else:
+                if preproc_proj_extra == 0:
+                    U = rand_ortho_butterfly(w.shape[0]).to(torch.float32).to(w.device)
+                    V = rand_ortho_butterfly(w.shape[1]).to(torch.float32).to(w.device)
+                elif preproc_proj_extra == 1:
+                    U = rand_ortho_butterfly_noblock(w.shape[0]).to(torch.float32).to(w.device)
+                    V = rand_ortho_butterfly_noblock(w.shape[1]).to(torch.float32).to(w.device)
+                elif preproc_proj_extra == 2:
+                    U = rand_ortho_butterfly_nopermute(w.shape[0]).to(torch.float32).to(w.device)
+                    V = rand_ortho_butterfly_nopermute(w.shape[1]).to(torch.float32).to(w.device)
             #EH = torch.linalg.eigh(H)
             #H = (EH.eigenvectors @ torch.diag(EH.eigenvalues.relu() * H.shape[0] / (EH.eigenvalues.relu().sum() + 1e-8) + 1e-2) @ EH.eigenvectors.T).to(w.device)
             #H = H.to(torch.float32)
@@ -188,8 +193,10 @@ class QuantMethod:
             H[dead, dead] = 1
             w[:, dead] = 0
             damp = percdamp * torch.mean(torch.diag(H))
-            diag = torch.arange(self.columns, device=self.dev)
-            H[diag, diag] += damp
+            # diag = torch.arange(self.columns, device=self.dev)
+            # H[diag, diag] += damp
+            H += damp * torch.eye(H.shape[0]).to(self.dev)
+
             self.layer.weight.data = w.to(self.layer.weight.data.dtype)
             self.H.data = H.to(self.H.data.dtype)
         self.preproc_done = True

@@ -335,6 +335,12 @@ class ViTImageNetLoaderGenerator(ImageNetLoaderGenerator):
         model = self.kwargs.get("model", None)
         assert model != None, f"No model in ViTImageNetLoaderGenerator!"
 
-        config = resolve_data_config({}, model=model)
+        img_size = self.kwargs.get("img_size", None)
+        if img_size is None:
+            args = {}
+        else:
+            args = {"img_size": img_size}
+
+        config = resolve_data_config(args = args, model=model)
         self.train_transform = create_transform(**config, is_training=True)
         self.test_transform = create_transform(**config)

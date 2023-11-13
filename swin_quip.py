@@ -113,15 +113,13 @@ def valid(args, model, writer, test_loader, global_step):
     return accuracy
 
 @torch.no_grad()
-def quantize_vit(model, tff_ns, data_batch, dev, args):
+def quantize_swin(model, tff_ns, train_batch, dev, args):
     print('Starting ...')
     # layers = model.transformer.encoder.layer
     # for batch in dataloader:
     #     inps = model.transformer.embeddings(batch[0].to(device))
     #     break
 
-    layers = model.blocks
-    dtype = next(iter(model.parameters())).dtype
     inps = []
     class Catcher(nn.Module):
         def __init__(self, module):
@@ -132,13 +130,15 @@ def quantize_vit(model, tff_ns, data_batch, dev, args):
             inps.append(inp)
             raise ValueError
 
-    layers[0] = Catcher(layers[0])
+    model.layers[0] = Catcher(model.layers[0])
     try:
         model(train_batch[0].to(dev))
     except ValueError:
         pass
     inps = inps[0]
-    layers[0] = layers[0].module
+    model.layers[0] = model.layers[0].module
+
+    layers = model.layers
 
     tffs = {}
     for n in tff_ns:
@@ -147,202 +147,239 @@ def quantize_vit(model, tff_ns, data_batch, dev, args):
         k_attn = int(n_attn // l_attn * args.tff_redundancy)
         tffs[n_attn] = construct_real_tff(k_attn, l_attn // 2, n_attn // 2).to(dev)
 
-    outs = torch.zeros_like(inps)
-    print('Ready.')
 
-    quantizers = {}
-    tff_rand_seeds = {}
-    quantized_weights = {}
-    Wiener_params = {}
-    errors, Hmags, times = [], [], []
-    for i in tqdm(range(len(layers))):
-        layer = layers[i].to(dev)
+    layer_quantizers = {}
+    layer_tff_rand_seeds = {}
+    layer_quantized_weights = {}
+    layer_Wiener_params = {}
+    layer_errors, layer_Hmags, layer_times = {}, {}, {}
+    for _l, layer in enumerate(layers):
+        blocks = layer.blocks
 
-        subset = find_layers(layer)
-        quant_method = {}
-        # Initialize Quant Method and Compute H
-        for name in subset:
-            if args.quant == 'gptq':
-                quant_method[name] = GPTQ(subset[name])
-                quant_method[name].quantizer = Quantizer()
-                quant_method[name].quantizer.configure(args.wbits,
-                                               perchannel=True,
-                                               sym=False,
-                                               qfn=args.qfn,
-                                               mse=False, 
-                                               x_sigma= args.x_sigma)
-            elif args.quant == 'nearest':
-                quant_method[name] = Nearest(subset[name])
-                quant_method[name].quantizer = Quantizer()
-                quant_method[name].quantizer.configure(args.wbits,
-                                               perchannel=True,
-                                               sym=False,
-                                               qfn=args.qfn,
-                                               mse=False,
-                                               x_sigma = args.x_sigma)
-            elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
-                quant_method[name] = Balance(subset[name])
-                quant_method[name].configure(
-                                    args.quant,
-                                    args.wbits, 
-                                    args.npasses,
-                                    unbiased=args.unbiased)
-                quant_method[name].quantizer = Quantizer()
-                quant_method[name].quantizer.configure(args.wbits,
-                                               perchannel=True,
-                                               sym=False,
-                                               qfn=args.qfn,
-                                               mse=False, 
-                                               x_sigma = args.x_sigma)
+        temp_inps = []
+        class Catcher(nn.Module):
+            def __init__(self, module):
+                super().__init__()
+                self.module = module
 
-            if args.pre_tff:
-                u_n = subset[name].weight.shape[0]
-                v_n = subset[name].weight.shape[1]
-                # quant_method[name].U = tffs[u_n].view(-1, u_n) 
-                # quant_method[name].V = tffs[v_n].view(-1, v_n)
-                g_u = torch.Generator() # use this to store the seed for later
-                u_seed = g_u.seed()
-                rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
-                Q_u, _ = torch.linalg.qr(rand_mat_u)
-                g_v = torch.Generator() # use this to store the seed for later
-                v_seed = g_v.seed()
-                rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
-                Q_v, _ = torch.linalg.qr(rand_mat_v)
-                tff_rand_seeds[f'quantized model.decoder.layers.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
-                quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T.to(dev)
-                quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T.to(dev)
+            def forward(self, inp, **kwargs):
+                temp_inps.append(inp)
+                raise ValueError
 
-        def add_batch(name):
+        blocks[0] = Catcher(blocks[0])
+        try:
+            layer(inps.to(dev))
+        except ValueError:
+            pass
+        inps = temp_inps[0]
+        blocks[0] = blocks[0].module
 
-            def tmp(_, inp, out):
-                quant_method[name].add_batch(inp[0].data, out.data)
+        outs = torch.zeros_like(inps)
+        print('Ready.')
 
-            return tmp
+        quantizers = {}
+        tff_rand_seeds = {}
+        quantized_weights = {}
+        Wiener_params = {}
+        errors, Hmags, times = [], [], []
+        for i in tqdm(range(len(blocks))):
+            block = blocks[i].to(dev)
 
-        handles = []
-        for name in subset:
-            handles.append(subset[name].register_forward_hook(add_batch(name)))
-        for j in range(args.train_batch_size):
-            outs[j] = layer(inps[j].unsqueeze(0))[0]
-        for h in handles:
-            h.remove()
-        # (H / nsamples).to(torch.float32)
-        for name in subset:
-            quant_method[name].post_batch()
+            subset = find_layers(block)
+            quant_method = {}
+            # Initialize Quant Method and Compute H
+            for name in subset:
+                if args.quant == 'gptq':
+                    quant_method[name] = GPTQ(subset[name])
+                    quant_method[name].quantizer = Quantizer()
+                    quant_method[name].quantizer.configure(args.wbits,
+                                                   perchannel=True,
+                                                   sym=False,
+                                                   qfn=args.qfn,
+                                                   mse=False, 
+                                                   x_sigma= args.x_sigma)
+                elif args.quant == 'nearest':
+                    quant_method[name] = Nearest(subset[name])
+                    quant_method[name].quantizer = Quantizer()
+                    quant_method[name].quantizer.configure(args.wbits,
+                                                   perchannel=True,
+                                                   sym=False,
+                                                   qfn=args.qfn,
+                                                   mse=False,
+                                                   x_sigma = args.x_sigma)
+                elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
+                    quant_method[name] = Balance(subset[name])
+                    quant_method[name].configure(
+                                        args.quant,
+                                        args.wbits, 
+                                        args.npasses,
+                                        unbiased=args.unbiased)
+                    quant_method[name].quantizer = Quantizer()
+                    quant_method[name].quantizer.configure(args.wbits,
+                                                   perchannel=True,
+                                                   sym=False,
+                                                   qfn=args.qfn,
+                                                   mse=False, 
+                                                   x_sigma = args.x_sigma)
 
-        # Quantize Weights
-        for name in subset:
-            # print(i, name)
-            # print('Quantizing ...')
+                if args.pre_tff:
+                    u_n = subset[name].weight.shape[0]
+                    v_n = subset[name].weight.shape[1]
+                    # quant_method[name].U = tffs[u_n].view(-1, u_n) 
+                    # quant_method[name].V = tffs[v_n].view(-1, v_n)
+                    g_u = torch.Generator() # use this to store the seed for later
+                    u_seed = g_u.seed()
+                    rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
+                    Q_u, _ = torch.linalg.qr(rand_mat_u)
+                    g_v = torch.Generator() # use this to store the seed for later
+                    v_seed = g_v.seed()
+                    rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
+                    Q_v, _ = torch.linalg.qr(rand_mat_v)
+                    layer_tff_rand_seeds[f'model.layers.{_l}.blocks.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
+                    quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T.to(dev)
+                    quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T.to(dev)
+                    # # generate a random projection Matrix
+                    # g_cpu = torch.Generator() # use this to store the seed for later
+                    # rand_mat = torch.randn((tff_n, tff_n), generator=g_cpu)
+                    # Q, R = torch.linalg.qr(rand_mat)
+                    # quant_method[name].tff = tffs[tff_n].view(-1, tff_n) @ (Q.T).to(dev)
+                    # quant_method[name].rand_mat = rand_mat
 
-            # project onto the frames
-            # if args.pre_tff:
-            #     clean_W = quant_method[name].layer.weight.data.clone()
-            #     quant_method[name].layer.weight.data = quant_method[name].tff @ clean_W
-            quant_method[name].preproc(
-                                preproc_gptqH=args.pre_gptqH, percdamp=args.percdamp,
-                                preproc_rescale=args.pre_rescale, 
-                                preproc_proj=args.pre_proj, preproc_proj_extra=args.pre_proj_extra)
-            if args.quant == 'gptq':
-                quant_method[name].fasterquant(groupsize=args.groupsize)
-            elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
-                quant_method[name].fasterquant(lazy_batch=args.lazy_batch)
-            elif args.quant == 'nearest':
-                quant_method[name].fasterquant()
+            def add_batch(name):
 
-            quantizers['model.decoder.layers.%d.%s' %
-                        (i, name)] = quant_method[name].quantizer
-            quantized_weights['model.decoder.layers.%d.%s' %
-                        (i, name)] = quant_method[name].layer.weight.data.clone().cpu()
+                def tmp(_, inp, out):
+                    quant_method[name].add_batch(inp[0].data, out.data)
 
-            # log the layer name
-            logging.info(f'quantized model.decoder.layers.{i}.{name}')
-            # apply the Weiner filter
-            wiener_params_i = None
-            # if args.pre_tff:
-            #     if args.wiener_filt_en:
-            #         wiener_params_i = quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
-            #     elif args.clamp_noise_filt_en:
-            #         # implement the Wiener filter based on the clamped noise
-            #         clamped_projs = quant_method[name].clamped_proj
-            #         x = clean_W
-            #         z = clamped_projs
-            #         a = quant_method[name].tff @ x 
-            #         n = z - a
-            #         var_x = x.var()
-            #         var_n = n.var()
-            #         Wiener_F = (var_x * quant_method[name].tff.T) @ torch.linalg.pinv(var_x * quant_method[name].tff @ quant_method[name].tff.T + var_n)
-            #         k=args.Weiner_m_diag_rank
-            #         if k != 0:
-            #             num_samples = clean_W.shape[1]
-            #             Rxz = clean_W @ clamped_projs.T / num_samples
-            #             Rzz = clamped_projs @ clamped_projs.T / num_samples
-            #             full_Wiener_F = Rxz @ torch.linalg.pinv(Rzz)
-            #             Wiener_residue = full_Wiener_F - Wiener_F
-            #             U, S, Vt = torch.linalg.svd(Wiener_residue)
-            #             Wiener_res_approx = torch.matmul(U[:, :k], torch.matmul(torch.diag(S[:k]), Vt[:k, :]))
-            #         else:
-            #             Wiener_res_approx = 0
-            #         Wiener_F = Wiener_F + Wiener_res_approx
-            #         # Wiener_F = Wiener_res_approx
+                return tmp
 
-            #         quant_method[name].layer.weight.data = Wiener_F @ quant_method[name].layer.weight.data
-            #     else:
-            #         quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
+            handles = []
+            for name in subset:
+                handles.append(subset[name].register_forward_hook(add_batch(name)))
+            for j in range(args.train_batch_size):
+                outs[j] = block(inps[j].unsqueeze(0))[0]
+            for h in handles:
+                h.remove()
+            # (H / nsamples).to(torch.float32)
+            for name in subset:
+                quant_method[name].post_batch()
+
+            # Quantize Weights
+            for name in subset:
+                # print(i, name)
+                # print('Quantizing ...')
+
+                # project onto the frames
+                # if args.pre_tff:
+                #     clean_W = quant_method[name].layer.weight.data.clone()
+                #     quant_method[name].layer.weight.data = quant_method[name].tff @ clean_W
+                quant_method[name].preproc(
+                                    preproc_gptqH=args.pre_gptqH, percdamp=args.percdamp,
+                                    preproc_rescale=args.pre_rescale, 
+                                    preproc_proj=args.pre_proj, preproc_proj_extra=args.pre_proj_extra)
+                if args.quant == 'gptq':
+                    quant_method[name].fasterquant(groupsize=args.groupsize)
+                elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
+                    quant_method[name].fasterquant(lazy_batch=args.lazy_batch)
+                elif args.quant == 'nearest':
+                    quant_method[name].fasterquant()
+
+                layer_quantizers['model.layers.%d.blocks.%d.%s' %
+                            (_l, i, name)] = quant_method[name].quantizer
+                layer_quantized_weights['model.layers.%d.blocks.%d.%s' %
+                            (_l, i, name)] = quant_method[name].layer.weight.data.clone().cpu()
+
+                # log the layer name
+                logging.info(f'quantized model.decoder.layers.{i}.{name}')
+                # apply the Weiner filter
+                wiener_params_i = None
+                # if args.pre_tff:
+                #     if args.wiener_filt_en:
+                #         wiener_params_i = quant_method[name].apply_weiner_filter(clean_W, args.Weiner_m_diag_rank)
+                #     elif args.clamp_noise_filt_en:
+                #         # implement the Wiener filter based on the clamped noise
+                #         clamped_projs = quant_method[name].clamped_proj
+                #         x = clean_W
+                #         z = clamped_projs
+                #         a = quant_method[name].tff @ x 
+                #         n = z - a
+                #         var_x = x.var()
+                #         var_n = n.var()
+                #         Wiener_F = (var_x * quant_method[name].tff.T) @ torch.linalg.pinv(var_x * quant_method[name].tff @ quant_method[name].tff.T + var_n)
+                #         k=args.Weiner_m_diag_rank
+                #         if k != 0:
+                #             num_samples = clean_W.shape[1]
+                #             Rxz = clean_W @ clamped_projs.T / num_samples
+                #             Rzz = clamped_projs @ clamped_projs.T / num_samples
+                #             full_Wiener_F = Rxz @ torch.linalg.pinv(Rzz)
+                #             Wiener_residue = full_Wiener_F - Wiener_F
+                #             U, S, Vt = torch.linalg.svd(Wiener_residue)
+                #             Wiener_res_approx = torch.matmul(U[:, :k], torch.matmul(torch.diag(S[:k]), Vt[:k, :]))
+                #         else:
+                #             Wiener_res_approx = 0
+                #         Wiener_F = Wiener_F + Wiener_res_approx
+                #         # Wiener_F = Wiener_res_approx
+
+                #         quant_method[name].layer.weight.data = Wiener_F @ quant_method[name].layer.weight.data
+                #     else:
+                #         quant_method[name].layer.weight.data = quant_method[name].tff.T @ quant_method[name].layer.weight.data
 
 
 
-            Wiener_params['model.decoder.layers.%d.%s' %
-                        (i, name)] = wiener_params_i
+                layer_Wiener_params['model.layers.%d.blocks.%d.%s' %
+                            (_l, i, name)] = wiener_params_i
 
-                # # run the linear quadratic program
-                # import cvxpy as cp
+                    # # run the linear quadratic program
+                    # import cvxpy as cp
 
-                # xs = []
-                # qw = quant_method[name].layer.weight.data / quant_method[name].quantizer.scale
-                # solve_failed_count = 0
-                # solve_failed_indices = []
-                # for i in tqdm(range(clean_W.shape[1])):
-                #     x = cp.Variable((clean_W.shape[0], 1))
-                #     cost = cp.sum_squares(torch.zeros((clean_W.shape[0], 1)))
-                #     constraints = [quant_method[name].tff.cpu() @ x <= (qw[:,i][...,None] + 1).cpu()]
-                #     constraints += [quant_method[name].tff.cpu() @ x >= (qw[:,i][...,None] ).cpu()]
-                #     prob = cp.Problem(cp.Minimize(cost), constraints)
-                #     prob.solve(solver=cp.SCS, max_iters=2)
+                    # xs = []
+                    # qw = quant_method[name].layer.weight.data / quant_method[name].quantizer.scale
+                    # solve_failed_count = 0
+                    # solve_failed_indices = []
+                    # for i in tqdm(range(clean_W.shape[1])):
+                    #     x = cp.Variable((clean_W.shape[0], 1))
+                    #     cost = cp.sum_squares(torch.zeros((clean_W.shape[0], 1)))
+                    #     constraints = [quant_method[name].tff.cpu() @ x <= (qw[:,i][...,None] + 1).cpu()]
+                    #     constraints += [quant_method[name].tff.cpu() @ x >= (qw[:,i][...,None] ).cpu()]
+                    #     prob = cp.Problem(cp.Minimize(cost), constraints)
+                    #     prob.solve(solver=cp.SCS, max_iters=2)
 
-                #     print(x.value)
-                #     if x.value is None:
-                #         solve_failed_count += 1
-                #         solve_failed_indices.append(i)
+                    #     print(x.value)
+                    #     if x.value is None:
+                    #         solve_failed_count += 1
+                    #         solve_failed_indices.append(i)
 
-                #     # xs.append(torch.from_numpy(x.value))
+                    #     # xs.append(torch.from_numpy(x.value))
 
-                #     del x
-                #     del cost
-                #     del constraints
-                #     del prob
+                    #     del x
+                    #     del cost
+                    #     del constraints
+                    #     del prob
 
-                # final_x = torch.cat(xs, dim=1) * quant_method[name].quantizer.scale
-                # breakpoint()
-            # 
+                    # final_x = torch.cat(xs, dim=1) * quant_method[name].quantizer.scale
+                    # breakpoint()
+                # 
 
-            errors.append(quant_method[name].error)
-            times.append(quant_method[name].time)
-            Hmags.append(quant_method[name].Hmag)
-            quant_method[name].free()
+                errors.append(quant_method[name].error)
+                times.append(quant_method[name].time)
+                Hmags.append(quant_method[name].Hmag)
+                quant_method[name].free()
 
+
+            # outs = layer(inps)[0]
+            outs = block(inps)
+
+            del block
+            del quant_method
+            torch.cuda.empty_cache()
+
+            inps, outs = outs, inps
+
+        layer_errors[_l] = errors
+        # layer_Hmags[_l] = Hmags
+        # layer_times[_l] = times
         
-        # outs = layer(inps)[0]
-        outs = layer(inps)
-
-        del layer
-        del quant_method
-        torch.cuda.empty_cache()
-
-        inps, outs = outs, inps
-
     print(f'Total quant time: {sum(times):.2f}s')
-    return quantizers, errors, quantized_weights, Wiener_params, tff_rand_seeds
+    return layer_quantizers, layer_errors, layer_quantized_weights, layer_Wiener_params, layer_tff_rand_seeds
 
 def custom_val(net, test_set, device):
     all_labels = []
@@ -565,13 +602,11 @@ if __name__ == '__main__':
     # model.eval()
 
     # get the different tff_n values for different models
-    tff_ns_all = {  'vit_tiny_patch16_224': [576, 192, 768],
-                'vit_small_patch16_224': [1152, 384, 1536],
-                'vit_small_patch32_224': [1152, 384, 1536],
-                'vit_base_patch16_224': [2304, 768, 3072],
-                'deit_tiny_patch16_224': [576, 192, 768],
-                'deit_small_patch16_224': [1152, 384, 1536],
-                'deit_base_patch16_224': [2304, 768, 3072]}
+    tff_ns_all = {  'swin_small_patch4_window7_224': [288, 96, 384, 576, 192, 768, 1152, 1536, 2304, 3072], 
+                    'swin_base_patch4_window7_224':  [384, 128, 512, 768, 256, 1024, 1536, 2048, 3072, 4096], 
+                    'swin_base_patch4_window12_384':  [384, 128, 512, 768, 256, 1024, 1536, 2048, 3072, 4096], 
+                }
+
 
     name = args.timm_model_name
     model = timm.create_model(name, pretrained=True).to(device)
@@ -582,8 +617,13 @@ if __name__ == '__main__':
 
     tff_ns = tff_ns_all[name]
 
-    g=datasets.ViTImageNetLoaderGenerator(args.dataset_path,'imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
-    train_batch = torch.load(args.train_batch_path)
+    img_size = int(name.split('_')[-1])
+
+    g=datasets.ViTImageNetLoaderGenerator(args.dataset_path,'imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model, "img_size":img_size})
+    if img_size == 224:
+        train_batch = torch.load(args.train_batch_path)
+    else:
+        train_batch = torch.load('./data/train_batch_384.pt')
 
     log_values['model_name'] = name
     log_values['num_params'] = num_params
@@ -607,8 +647,8 @@ if __name__ == '__main__':
             logging.info(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
 
         tick = time.time()
-        quantizers, errors, quantized_weights, Wiener_params, tff_rand_seeds = quantize_vit(model, tff_ns, train_batch, args.device, args)
-        # quantizers, errors = quantize_vit(model, test_loader, args.device, args)
+        quantizers, errors, quantized_weights, Wiener_params, tff_rand_seeds = quantize_swin(model, tff_ns, train_batch, args.device, args)
+        # quantizers, errors = quantize_swin(model, test_loader, args.device, args)
         print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
         print("")
         print(f'Proxy Summary: Qmethod:{args.quant}, Unbiased: {args.unbiased}, W:{args.wbits}, NPass:{args.npasses}')

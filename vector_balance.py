@@ -7,6 +7,8 @@ import sys
 
 def check_nbits(wr, nbits):
     (wr_vals, wr_counts) = torch.unique(wr, sorted=True, return_counts=True)
+    if (len(wr_vals) > 2**nbits):
+        breakpoint()
     assert (len(wr_vals) <= 2**nbits)
     return wr_counts
 

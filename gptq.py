@@ -25,12 +25,19 @@ class GPTQ(QuantMethod):
         # when check LDL and GPTQ equiv, need float64 for numerics
         if not debug_equiv:
             W = W.float()
-        full_W = W.clone()
 
         tick = time.time()
 
         if not self.quantizer.ready():
             self.quantizer.find_params(W, weight=True)
+
+        # if hasattr(self, 'U'):
+        #     # we are doing TFF
+        #     # clamp the weights
+        #     W = torch.clamp((W/self.quantizer.scale) + self.quantizer.zero, 0, self.quantizer.maxq)
+        #     W = (W - self.quantizer.zero) * self.quantizer.scale
+        full_W = W.clone()
+
 
         # for saving H
         if copy_H:
@@ -108,8 +115,8 @@ class GPTQ(QuantMethod):
         if DEBUG:
             print(torch.sum((self.layer(self.inp1) - self.out1)**2))
 
-        self.postproc()
         self.error_compute(full_W, self.layer.weight.data)
+        self.postproc()
         # to preserve H for saveH
         if not copy_H:
             del self.H

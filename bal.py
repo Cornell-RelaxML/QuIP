@@ -42,8 +42,8 @@ class Balance(QuantMethod):
             lazy_batch=lazy_batch
         )
         self.layer.weight.data = quant_w
+        self.error_compute(w, quant_w)
         self.postproc()
         # print('time %.2f' % (time.time() - tick))
         self.time = time.time() - tick
-        self.error_compute(w, quant_w)
         self.clamped_proj = clamped_proj
