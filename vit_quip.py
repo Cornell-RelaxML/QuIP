@@ -571,7 +571,9 @@ if __name__ == '__main__':
                 'vit_base_patch16_224': [2304, 768, 3072],
                 'deit_tiny_patch16_224': [576, 192, 768],
                 'deit_small_patch16_224': [1152, 384, 1536],
-                'deit_base_patch16_224': [2304, 768, 3072]}
+                'deit_base_patch16_224': [2304, 768, 3072], 
+                'vit_huge_patch14_clip_224.laion2b_ft_in1k': [3840, 1280, 5120], 
+                'vit_large_patch16_224.augreg_in21k_ft_in1k': [3072, 1024, 4096]}
 
     name = args.timm_model_name
     model = timm.create_model(name, pretrained=True).to(device)
