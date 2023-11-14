@@ -19,7 +19,13 @@
 # python fullPrecision_exps.py --batch_size 128 --parent_dir full_pres --exp_name swin_base_patch4_window12_384 --model_name swin_base_patch4_window12_384
 # sleep 1
 
-python fullPrecision_exps.py --batch_size 32 --parent_dir full_pres --exp_name vit_huge_patch14_clip_224_laion2b_ft_in1k --model_name vit_huge_patch14_clip_224.laion2b_ft_in1k
+# python fullPrecision_exps.py --batch_size 32 --parent_dir full_pres --exp_name vit_huge_patch14_clip_224_laion2b_ft_in1k --model_name vit_huge_patch14_clip_224.laion2b_ft_in1k
+# sleep 1
+# python fullPrecision_exps.py --batch_size 32 --parent_dir full_pres --exp_name vit_large_patch16_224_augreg_in21k_ft_in1k --model_name vit_large_patch16_224.augreg_in21k_ft_in1k
+# sleep 1
+
+python fullPrecision_exps.py --batch_size 32 --parent_dir full_pres --exp_name beit_base_patch16_384.in22k_ft_in22k_in1k --model_name beit_base_patch16_384.in22k_ft_in22k_in1k
 sleep 1
-python fullPrecision_exps.py --batch_size 32 --parent_dir full_pres --exp_name vit_large_patch16_224_augreg_in21k_ft_in1k --model_name vit_large_patch16_224.augreg_in21k_ft_in1k
+python fullPrecision_exps.py --batch_size 32 --parent_dir full_pres --exp_name beit_large_patch16_512.in22k_ft_in22k_in1k --model_name beit_large_patch16_512.in22k_ft_in22k_in1k
 sleep 1
+

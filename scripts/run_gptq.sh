@@ -16,7 +16,8 @@
 # sleep 2
 # done
 
-vit_models=(vit_huge_patch14_clip_224.laion2b_ft_in1k vit_large_patch16_224.augreg_in21k_ft_in1k)
+# vit_models=(vit_huge_patch14_clip_224.laion2b_ft_in1k vit_large_patch16_224.augreg_in21k_ft_in1k)
+vit_models=(beit_base_patch16_384.in22k_ft_in22k_in1k beit_large_patch16_512.in22k_ft_in22k_in1k)
 
 for var in ${!vit_models[@]}
 do

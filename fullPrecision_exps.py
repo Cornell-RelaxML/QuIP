@@ -77,7 +77,9 @@ if __name__ == '__main__':
         "swin_base_patch4_window7_224",
         "swin_base_patch4_window12_384",
         "vit_huge_patch14_clip_224.laion2b_ft_in1k",
-        "vit_large_patch16_224.augreg_in21k_ft_in1k"
+        "vit_large_patch16_224.augreg_in21k_ft_in1k",
+        "beit_base_patch16_384.in22k_ft_in22k_in1k",
+        "beit_large_patch16_512.in22k_ft_in22k_in1k"
     ]
     if args.model_name is None:
         name = names[args.modelIndex]
