@@ -2,8 +2,8 @@ import torch
 import timm
 
 names = {
-    'beit-b384': 'beit_base_patch16_384.in22k_ft_in22k_in1k',
-    'beit-l512': 'beit_large_patch16_512.in22k_ft_in22k_in1k'}
+    'beit-b224': 'beit_base_patch16_224.in22k_ft_in22k_in1k',
+    'beit-l224': 'beit_large_patch16_224.in22k_ft_in22k_in1k'}
 
 sizes = {}
 for k,v in names.items():

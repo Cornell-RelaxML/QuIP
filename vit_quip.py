@@ -576,6 +576,8 @@ if __name__ == '__main__':
                 'vit_large_patch16_224.augreg_in21k_ft_in1k': [3072, 1024, 4096],
                 'beit_base_patch16_384.in22k_ft_in22k_in1k': [2304, 768, 3072],
                 'beit_large_patch16_512.in22k_ft_in22k_in1k': [3072, 1024, 4096],
+                'beit_base_patch16_224.in22k_ft_in22k_in1k': [2304, 768, 3072],
+                'beit_large_patch16_224.in22k_ft_in22k_in1k': [3072, 1024, 4096],
                 }
 
     name = args.timm_model_name
