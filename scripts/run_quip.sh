@@ -39,7 +39,7 @@ vit_models=(vit_huge_patch14_clip_224.laion2b_ft_in1k vit_large_patch16_224.augr
 for var in ${!vit_models[@]}
 do
 echo ${vit_models[$var]}
-python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir quip --wbits 2 --quant ldlq --eval_batch_size 64 --pre_gptqH --pre_proj --qfn b --timm_model_name ${vit_models[$var]} --train_batch_path ./data/train_batch_2.pt
+python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir quip --wbits 2 --quant ldlq --eval_batch_size 8 --pre_gptqH --pre_proj --qfn b --timm_model_name ${vit_models[$var]} --train_batch_path ./data/train_batch_2.pt
 sleep 2
 done
 
@@ -48,6 +48,6 @@ vit_models=(vit_huge_patch14_clip_224.laion2b_ft_in1k vit_large_patch16_224.augr
 for var in ${!vit_models[@]}
 do
 echo ${vit_models[$var]}
-python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir quip_2sig --wbits 2 --quant ldlq --eval_batch_size 64 --pre_gptqH --pre_proj --qfn s --x_sigma 2 --timm_model_name ${vit_models[$var]} --train_batch_path ./data/train_batch_2.pt
+python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir quip_2sig --wbits 2 --quant ldlq --eval_batch_size 8 --pre_gptqH --pre_proj --qfn s --x_sigma 2 --timm_model_name ${vit_models[$var]} --train_batch_path ./data/train_batch_2.pt
 sleep 2
 done
