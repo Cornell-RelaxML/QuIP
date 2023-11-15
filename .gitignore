@@ -1,6 +1,8 @@
 data/
 output/
 __pycache__/
+output_new/
+
 
 # temp files
 *.pt
@@ -9,3 +11,4 @@ __pycache__/
 *.txt
 *_torchviz
 *.model
+*.zip

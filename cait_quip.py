@@ -206,12 +206,10 @@ def quantize_vit(model, train_batch, dev, args):
                     if u_n not in tffs:
                         l = l_tff if l_tff < u_n/2 else 2
                         k_tff = int(u_n // l * args.tff_redundancy)
-                        print(f'{mod_name}.{i}.{name} {k_tff = }, {l = } {u_n = }')
                         tffs[u_n] = construct_real_tff(k_tff, l // 2, u_n // 2).to(dev)
                     if v_n not in tffs:
                         l = l_tff if l_tff < v_n/2 else 2
                         k_tff = int(v_n // l * args.tff_redundancy)
-                        print(f'{mod_name}.{i}.{name} {k_tff = }, {l = } {v_n = }')
                         tffs[v_n] = construct_real_tff(k_tff, l // 2, v_n // 2).to(dev)
 
                     g_u = torch.Generator() # use this to store the seed for later
@@ -495,7 +493,7 @@ if __name__ == '__main__':
     if exp_name != 'debug_thread':
         if args.save_path is None:
             current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            directory_path = os.path.join("output", f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
+            directory_path = os.path.join("output_new", f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
             args.save_path = directory_path
         else:
             directory_path = args.save_path

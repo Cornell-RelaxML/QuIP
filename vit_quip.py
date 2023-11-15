@@ -113,7 +113,7 @@ def valid(args, model, writer, test_loader, global_step):
     return accuracy
 
 @torch.no_grad()
-def quantize_vit(model, tff_ns, data_batch, dev, args):
+def quantize_vit(model, train_batch, dev, args):
     print('Starting ...')
     # layers = model.transformer.encoder.layer
     # for batch in dataloader:
@@ -121,7 +121,6 @@ def quantize_vit(model, tff_ns, data_batch, dev, args):
     #     break
 
     layers = model.blocks
-    dtype = next(iter(model.parameters())).dtype
     inps = []
     class Catcher(nn.Module):
         def __init__(self, module):
@@ -141,11 +140,7 @@ def quantize_vit(model, tff_ns, data_batch, dev, args):
     layers[0] = layers[0].module
 
     tffs = {}
-    for n in tff_ns:
-        n_attn = n
-        l_attn = 8
-        k_attn = int(n_attn // l_attn * args.tff_redundancy)
-        tffs[n_attn] = construct_real_tff(k_attn, l_attn // 2, n_attn // 2).to(dev)
+    l_tff = 8
 
     outs = torch.zeros_like(inps)
     print('Ready.')
@@ -198,8 +193,12 @@ def quantize_vit(model, tff_ns, data_batch, dev, args):
             if args.pre_tff:
                 u_n = subset[name].weight.shape[0]
                 v_n = subset[name].weight.shape[1]
-                # quant_method[name].U = tffs[u_n].view(-1, u_n) 
-                # quant_method[name].V = tffs[v_n].view(-1, v_n)
+                if u_n not in tffs:
+                    k_tff = int(u_n // l_tff * args.tff_redundancy)
+                    tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
+                if v_n not in tffs:
+                    k_tff = int(v_n // l_tff * args.tff_redundancy)
+                    tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
                 g_u = torch.Generator() # use this to store the seed for later
                 u_seed = g_u.seed()
                 rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
@@ -227,12 +226,10 @@ def quantize_vit(model, tff_ns, data_batch, dev, args):
             handles.append(subset[name].register_forward_hook(add_batch(name)))
         for j in range(args.train_batch_size):
             outs[j] = layer(inps[j].unsqueeze(0))[0]
-            breakpoint()
         for h in handles:
             h.remove()
         # (H / nsamples).to(torch.float32)
         for name in subset:
-            print(name, quant_method[name].H)
             quant_method[name].post_batch()
 
         # Quantize Weights
@@ -534,7 +531,7 @@ if __name__ == '__main__':
     if exp_name != 'debug_thread':
         if args.save_path is None:
             current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            directory_path = os.path.join("output", f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
+            directory_path = os.path.join("output_new", f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
             args.save_path = directory_path
         else:
             directory_path = args.save_path
@@ -573,23 +570,6 @@ if __name__ == '__main__':
     # args, model = setup(args)
     # model.eval()
 
-    # get the different tff_n values for different models
-    tff_ns_all = {  'vit_tiny_patch16_224': [576, 192, 768],
-                'vit_small_patch16_224': [1152, 384, 1536],
-                'vit_small_patch32_224': [1152, 384, 1536],
-                'vit_base_patch16_224': [2304, 768, 3072],
-                'deit_tiny_patch16_224': [576, 192, 768],
-                'deit_small_patch16_224': [1152, 384, 1536],
-                'deit_base_patch16_224': [2304, 768, 3072], 
-                'vit_huge_patch14_clip_224.laion2b_ft_in1k': [3840, 1280, 5120], 
-                'vit_large_patch16_224.augreg_in21k_ft_in1k': [3072, 1024, 4096],
-                'beit_base_patch16_384.in22k_ft_in22k_in1k': [2304, 768, 3072],
-                'beit_large_patch16_512.in22k_ft_in22k_in1k': [3072, 1024, 4096],
-                'beit_base_patch16_224.in22k_ft_in22k_in1k': [2304, 768, 3072],
-                'beit_large_patch16_224.in22k_ft_in22k_in1k': [3072, 1024, 4096],
-                'beitv2_base_patch16_224.in1k_ft_in1k': [2304, 768, 3072],
-                }
-
     name = args.timm_model_name
     model = timm.create_model(name, pretrained=True).to(device)
     model.eval()
@@ -597,10 +577,11 @@ if __name__ == '__main__':
     print(f'num_params = {num_params/ 1e6}')
     logging.info(f'num_params = {num_params/ 1e6}')
 
-    tff_ns = tff_ns_all[name]
-
-    g=datasets.ViTImageNetLoaderGenerator(args.dataset_path,'imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model})
-    train_batch = torch.load(args.train_batch_path)
+    g=datasets.ViTImageNetLoaderGenerator(args.dataset_path,'imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model, "img_size":args.img_size})
+    train_loader  = g.train_loader()
+    train_batch = next(iter(train_loader))
+    train_labels_used = train_batch[1]
+    # train_batch = torch.load(args.train_batch_path)
 
     log_values['model_name'] = name
     log_values['num_params'] = num_params
@@ -624,7 +605,7 @@ if __name__ == '__main__':
             logging.info(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
 
         tick = time.time()
-        quantizers, errors, quantized_weights, Wiener_params, tff_rand_seeds = quantize_vit(model, tff_ns, train_batch, args.device, args)
+        quantizers, errors, quantized_weights, Wiener_params, tff_rand_seeds = quantize_vit(model, train_batch, args.device, args)
         # quantizers, errors = quantize_vit(model, test_loader, args.device, args)
         print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
         print("")
@@ -683,3 +664,28 @@ if __name__ == '__main__':
         log_values['args'] = args
         with open(os.path.join(directory_path, 'log_values.pkl'), 'wb') as handle:
             pkl.dump(log_values, handle)
+
+        import csv
+        results  = [name, num_params/1e6, args.wbits, val_acc]
+        csv_file_path = os.path.join("output_new", f'{args.parent_dir}', f'wb{args.wbits}','results.csv')
+        with open(csv_file_path, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(results)
+
+
+# # get the different tff_n values for different models
+# tff_ns_all = {  'vit_tiny_patch16_224': [576, 192, 768],
+#             'vit_small_patch16_224': [1152, 384, 1536],
+#             'vit_small_patch32_224': [1152, 384, 1536],
+#             'vit_base_patch16_224': [2304, 768, 3072],
+#             'deit_tiny_patch16_224': [576, 192, 768],
+#             'deit_small_patch16_224': [1152, 384, 1536],
+#             'deit_base_patch16_224': [2304, 768, 3072], 
+#             'vit_huge_patch14_clip_224.laion2b_ft_in1k': [3840, 1280, 5120], 
+#             'vit_large_patch16_224.augreg_in21k_ft_in1k': [3072, 1024, 4096],
+#             'beit_base_patch16_384.in22k_ft_in22k_in1k': [2304, 768, 3072],
+#             'beit_large_patch16_512.in22k_ft_in22k_in1k': [3072, 1024, 4096],
+#             'beit_base_patch16_224.in22k_ft_in22k_in1k': [2304, 768, 3072],
+#             'beit_large_patch16_224.in22k_ft_in22k_in1k': [3072, 1024, 4096],
+#             'beitv2_base_patch16_224.in1k_ft_in1k': [2304, 768, 3072],
+#             }
