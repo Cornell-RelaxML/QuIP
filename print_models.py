@@ -1,14 +1,41 @@
 import torch
 import timm
+import os
 
-names = {
-    'beit-b224': 'beit_base_patch16_224.in22k_ft_in22k_in1k',
-    'beit-l224': 'beit_large_patch16_224.in22k_ft_in22k_in1k'}
+# names ={    'cait-m36': 'cait_m36_384.fb_dist_in1k',
+#             'cait-m48': 'cait_m48_448.fb_dist_in1k',
+#             'cait-s24_224': 'cait_s24_224.fb_dist_in1k',
+#             'cait-s24_384': 'cait_s24_384.fb_dist_in1k',
+#             'cait-s36_384': 'cait_s36_384.fb_dist_in1k',
+#             'cait-xs24_384': 'cait_xs24_384.fb_dist_in1k',
+#             'cait-xs24_224': 'cait_xxs24_224.fb_dist_in1k',
+#             'cait-xxs24_384': 'cait_xxs24_384.fb_dist_in1k',
+#             'cait-xxs36_224': 'cait_xxs36_224.fb_dist_in1k',
+#             'cait-xxs36_384': 'cait_xxs36_384.fb_dist_in1k'
+# }
+# class_name = 'cait'
 
+# names = {'poolform-m36': 'poolformer_m36.sail_in1k',
+#         'poolform-m48': 'poolformer_m48.sail_in1k',
+#         'poolform-s12': 'poolformer_s12.sail_in1k',
+#         'poolform-s24': 'poolformer_s24.sail_in1k',
+#         'poolform-s36': 'poolformer_s36.sail_in1k',
+# }
+# class_name = 'poolformer'
+names = {   'poolformv2-m36': 'poolformerv2_m36.sail_in1k',
+            'poolformv2-m48': 'poolformerv2_m48.sail_in1k',
+            'poolformv2-s12': 'poolformerv2_s12.sail_in1k',
+            'poolformv2-s24': 'poolformerv2_s24.sail_in1k',
+            'poolformv2-s36': 'poolformerv2_s36.sail_in1k',
+}
+class_name = 'poolformerV2'
+
+
+os.makedirs(f'models/definitions/{class_name}/', exist_ok=True)
 sizes = {}
 for k,v in names.items():
     model = timm.create_model(v, pretrained=True)
-    with open(f'models/definitions/{k}.model' ,'w') as h:
+    with open(f'models/definitions/{class_name}/{k}.model' ,'w') as h:
         print(model, file=h)
         num_params = sum([p.numel() for p in model.parameters()])/1e6
         print(k, num_params)

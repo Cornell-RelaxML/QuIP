@@ -82,7 +82,6 @@ if __name__ == '__main__':
         "beit_large_patch16_512.in22k_ft_in22k_in1k",
         "beit_base_patch16_224.in22k_ft_in22k_in1k",
         "beit_large_patch16_224.in22k_ft_in22k_in1k",
-        "poolformer_m36.sail_in1k",
     ]
     if args.model_name is None:
         name = names[args.modelIndex]
@@ -102,6 +101,7 @@ if __name__ == '__main__':
         test_set = g.test_loader()
 
         # Now you can iterate through the validation loader to get batches of images and their corresponding labels
+        breakpoint()
         all_labels = []
         all_preds = []
         num_examples = 0
