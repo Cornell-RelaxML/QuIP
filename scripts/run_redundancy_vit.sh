@@ -1,7 +1,7 @@
 # ViT
-vit_models=(vit_small_patch16_224 vit_base_patch16_224 vit_huge_patch14_clip_224.laion2b_ft_in1k deit3_small_patch16_224.fb_in22k_ft_in1k deit3_base_patch16_224.fb_in22k_ft_in1k deit3_huge_patch14_224.fb_in22k_ft_in1k)
-names=(vits vith deits deitb deith)
-img_sizes=(224 224 224 224 224 224)
+vit_models=(vit_small_patch16_224 vit_base_patch16_224 vit_huge_patch14_clip_224.laion2b_ft_in1k)
+names=(vits vitb vith)
+img_sizes=(224 224 224)
 
 for var in ${!vit_models[@]}
 do
