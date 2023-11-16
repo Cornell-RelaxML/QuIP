@@ -696,7 +696,7 @@ if __name__ == '__main__':
             pkl.dump(log_values, handle)
 
         import csv
-        results  = [name, num_params/1e6, args.wbits, val_acc]
+        results  = [name, num_params/1e6, args.tff_redundancy, args.wbits, val_acc]
         csv_file_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}','results.csv')
         with open(csv_file_path, mode='a', newline='') as handle:
             writer = csv.writer(handle)
