@@ -528,10 +528,11 @@ if __name__ == '__main__':
 
     # logging 
     exp_name = args.exp_name # 'mlp_attn_quant_weiner_full'
+    results_dir = 'output_new'
     if exp_name != 'debug_thread':
         if args.save_path is None:
             current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            directory_path = os.path.join("output_new", f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
+            directory_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
             args.save_path = directory_path
         else:
             directory_path = args.save_path
@@ -667,10 +668,10 @@ if __name__ == '__main__':
 
         import csv
         results  = [name, num_params/1e6, args.wbits, val_acc]
-        csv_file_path = os.path.join("output_new", f'{args.parent_dir}', f'wb{args.wbits}','results.csv')
-        with open(csv_file_path, mode='a', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(results)
+        csv_file_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}','results.csv')
+        with open(csv_file_path, mode='a', newline='') as handle:
+            writer = csv.writer(handle)
+            writer.writerow(results)
 
 
 # # get the different tff_n values for different models

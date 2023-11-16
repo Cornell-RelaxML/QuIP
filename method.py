@@ -97,7 +97,6 @@ class QuantMethod:
         self.inps = []
 
     def add_batch(self, inp, out):
-        print(f'{self.name} {inp.shape = }')
         if DEBUG:
             self.inp1 = inp
             self.out1 = out

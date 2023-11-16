@@ -113,7 +113,7 @@ def valid(args, model, writer, test_loader, global_step):
     return accuracy
 
 @torch.no_grad()
-def quantize_swin(model, tff_ns, train_batch, dev, args):
+def quantize_swin(model, train_batch, dev, args):
     print('Starting ...')
     # layers = model.transformer.encoder.layer
     # for batch in dataloader:
@@ -141,12 +141,7 @@ def quantize_swin(model, tff_ns, train_batch, dev, args):
     layers = model.layers
 
     tffs = {}
-    for n in tff_ns:
-        n_attn = n
-        l_attn = 8
-        k_attn = int(n_attn // l_attn * args.tff_redundancy)
-        tffs[n_attn] = construct_real_tff(k_attn, l_attn // 2, n_attn // 2).to(dev)
-
+    l_tff = 8
 
     layer_quantizers = {}
     layer_tff_rand_seeds = {}
@@ -225,8 +220,12 @@ def quantize_swin(model, tff_ns, train_batch, dev, args):
                 if args.pre_tff:
                     u_n = subset[name].weight.shape[0]
                     v_n = subset[name].weight.shape[1]
-                    # quant_method[name].U = tffs[u_n].view(-1, u_n) 
-                    # quant_method[name].V = tffs[v_n].view(-1, v_n)
+                    if u_n not in tffs:
+                        k_tff = int(u_n // l_tff * args.tff_redundancy)
+                        tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
+                    if v_n not in tffs:
+                        k_tff = int(v_n // l_tff * args.tff_redundancy)
+                        tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
                     g_u = torch.Generator() # use this to store the seed for later
                     u_seed = g_u.seed()
                     rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
@@ -238,12 +237,8 @@ def quantize_swin(model, tff_ns, train_batch, dev, args):
                     layer_tff_rand_seeds[f'model.layers.{_l}.blocks.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
                     quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T.to(dev)
                     quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T.to(dev)
-                    # # generate a random projection Matrix
-                    # g_cpu = torch.Generator() # use this to store the seed for later
-                    # rand_mat = torch.randn((tff_n, tff_n), generator=g_cpu)
-                    # Q, R = torch.linalg.qr(rand_mat)
-                    # quant_method[name].tff = tffs[tff_n].view(-1, tff_n) @ (Q.T).to(dev)
-                    # quant_method[name].rand_mat = rand_mat
+
+                quant_method[name].name = name
 
             def add_batch(name):
 
@@ -272,6 +267,10 @@ def quantize_swin(model, tff_ns, train_batch, dev, args):
                 # if args.pre_tff:
                 #     clean_W = quant_method[name].layer.weight.data.clone()
                 #     quant_method[name].layer.weight.data = quant_method[name].tff @ clean_W
+                if quant_method[name].nsamples == 0:
+                    print(name)
+                    breakpoint()
+                    continue
                 quant_method[name].preproc(
                                     preproc_gptqH=args.pre_gptqH, percdamp=args.percdamp,
                                     preproc_rescale=args.pre_rescale, 
@@ -559,10 +558,11 @@ if __name__ == '__main__':
 
     # logging 
     exp_name = args.exp_name # 'mlp_attn_quant_weiner_full'
+    results_dir = 'output_new'
     if exp_name != 'debug_thread':
         if args.save_path is None:
             current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            directory_path = os.path.join("output", f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
+            directory_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
             args.save_path = directory_path
         else:
             directory_path = args.save_path
@@ -601,13 +601,6 @@ if __name__ == '__main__':
     # args, model = setup(args)
     # model.eval()
 
-    # get the different tff_n values for different models
-    tff_ns_all = {  'swin_small_patch4_window7_224': [288, 96, 384, 576, 192, 768, 1152, 1536, 2304, 3072], 
-                    'swin_base_patch4_window7_224':  [384, 128, 512, 768, 256, 1024, 1536, 2048, 3072, 4096], 
-                    'swin_base_patch4_window12_384':  [384, 128, 512, 768, 256, 1024, 1536, 2048, 3072, 4096], 
-                }
-
-
     name = args.timm_model_name
     model = timm.create_model(name, pretrained=True).to(device)
     model.eval()
@@ -615,15 +608,10 @@ if __name__ == '__main__':
     print(f'num_params = {num_params/ 1e6}')
     logging.info(f'num_params = {num_params/ 1e6}')
 
-    tff_ns = tff_ns_all[name]
-
-    img_size = int(name.split('_')[-1])
-
-    g=datasets.ViTImageNetLoaderGenerator(args.dataset_path,'imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model, "img_size":img_size})
-    if img_size == 224:
-        train_batch = torch.load(args.train_batch_path)
-    else:
-        train_batch = torch.load('./data/train_batch_384.pt')
+    g=datasets.ViTImageNetLoaderGenerator(args.dataset_path,'imagenet',args.train_batch_size,args.eval_batch_size,16, kwargs={"model":model, "img_size":args.img_size})
+    train_loader  = g.train_loader()
+    train_batch = next(iter(train_loader))
+    train_labels_used = train_batch[1]
 
     log_values['model_name'] = name
     log_values['num_params'] = num_params
@@ -647,7 +635,7 @@ if __name__ == '__main__':
             logging.info(f"LDL NOTE: unbiased + {args.npasses} npasses. NOT TRULY UNBIASED.")
 
         tick = time.time()
-        quantizers, errors, quantized_weights, Wiener_params, tff_rand_seeds = quantize_swin(model, tff_ns, train_batch, args.device, args)
+        quantizers, errors, quantized_weights, Wiener_params, tff_rand_seeds = quantize_swin(model, train_batch, args.device, args)
         # quantizers, errors = quantize_swin(model, test_loader, args.device, args)
         print(f'Total quant + H time elapsed: {time.time() - tick:.2f}s')
         print("")
@@ -706,3 +694,17 @@ if __name__ == '__main__':
         log_values['args'] = args
         with open(os.path.join(directory_path, 'log_values.pkl'), 'wb') as handle:
             pkl.dump(log_values, handle)
+
+        import csv
+        results  = [name, num_params/1e6, args.wbits, val_acc]
+        csv_file_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}','results.csv')
+        with open(csv_file_path, mode='a', newline='') as handle:
+            writer = csv.writer(handle)
+            writer.writerow(results)
+
+
+    # # get the different tff_n values for different models
+    # tff_ns_all = {  'swin_small_patch4_window7_224': [288, 96, 384, 576, 192, 768, 1152, 1536, 2304, 3072], 
+    #                 'swin_base_patch4_window7_224':  [384, 128, 512, 768, 256, 1024, 1536, 2048, 3072, 4096], 
+    #                 'swin_base_patch4_window12_384':  [384, 128, 512, 768, 256, 1024, 1536, 2048, 3072, 4096], 
+    #             }

@@ -204,13 +204,11 @@ def quantize_vit(model, train_batch, dev, args):
                     u_n = subset[name].weight.shape[0]
                     v_n = subset[name].weight.shape[1]
                     if u_n not in tffs:
-                        l = l_tff if l_tff < u_n/2 else 2
-                        k_tff = int(u_n // l * args.tff_redundancy)
-                        tffs[u_n] = construct_real_tff(k_tff, l // 2, u_n // 2).to(dev)
+                        k_tff = int(u_n // l_tff * args.tff_redundancy)
+                        tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
                     if v_n not in tffs:
-                        l = l_tff if l_tff < v_n/2 else 2
-                        k_tff = int(v_n // l * args.tff_redundancy)
-                        tffs[v_n] = construct_real_tff(k_tff, l // 2, v_n // 2).to(dev)
+                        k_tff = int(v_n // l_tff * args.tff_redundancy)
+                        tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
 
                     g_u = torch.Generator() # use this to store the seed for later
                     u_seed = g_u.seed()
@@ -490,10 +488,11 @@ if __name__ == '__main__':
 
     # logging 
     exp_name = args.exp_name # 'mlp_attn_quant_weiner_full'
+    results_dir = 'output_new'
     if exp_name != 'debug_thread':
         if args.save_path is None:
             current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            directory_path = os.path.join("output_new", f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
+            directory_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}', f'{exp_name}_{current_datetime}')
             args.save_path = directory_path
         else:
             directory_path = args.save_path
@@ -627,3 +626,10 @@ if __name__ == '__main__':
         log_values['args'] = args
         with open(os.path.join(directory_path, 'log_values.pkl'), 'wb') as handle:
             pkl.dump(log_values, handle)
+
+        import csv
+        results  = [name, num_params/1e6, args.wbits, val_acc]
+        csv_file_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}','results.csv')
+        with open(csv_file_path, mode='a', newline='') as handle:
+            writer = csv.writer(handle)
+            writer.writerow(results)
