@@ -32,14 +32,17 @@ if __name__ == '__main__':
                         help="path to save the results")
     parser.add_argument('--n_gpu', type=int, default=1,
                         help="path to save the results")
+    parser.add_argument('--img_size', type=int, default=224,
+                        help="image size")
 
     args = parser.parse_args()
 
     exp_name = args.exp_name # 'mlp_attn_quant_weiner_full'
+    results_dir = "output_new"
     if exp_name != 'debug_thread':
         if args.save_path is None:
             current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            directory_path = os.path.join("output", f'{args.parent_dir}', f'{exp_name}_{current_datetime}')
+            directory_path = os.path.join(results_dir, f'{args.parent_dir}', f'{exp_name}_{current_datetime}')
             args.save_path = directory_path
         else:
             directory_path = args.save_path
@@ -98,7 +101,7 @@ if __name__ == '__main__':
         logging.info(f'num_params = {num_params/ 1e6}')
 
         # load the imagenet dataset
-        g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.batch_size,args.batch_size,16, kwargs={"model":net})
+        g=datasets.ViTImageNetLoaderGenerator('/data/harsha/quantization/imagenet2012','imagenet',args.batch_size,args.batch_size,16, kwargs={"model":net, "img_size":args.img_size})
         test_set = g.test_loader()
 
         # Now you can iterate through the validation loader to get batches of images and their corresponding labels
@@ -123,3 +126,10 @@ if __name__ == '__main__':
 
     if exp_name != 'debug_thread':
         torch.save(net.state_dict(), os.path.join(directory_path, 'model.pth'))
+
+        import csv
+        results  = [name, num_params/1e6, val_acc]
+        csv_file_path = os.path.join(results_dir, f'{args.parent_dir}', 'results.csv')
+        with open(csv_file_path, mode='a', newline='') as handle:
+            writer = csv.writer(handle)
+            writer.writerow(results)

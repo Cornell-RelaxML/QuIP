@@ -1,12 +1,13 @@
-swin_models=(swin_tiny_patch4_window7_224.ms_in22k_ft_in1k swin_small_patch4_window7_224.ms_in22k_ft_in1k swin_large_patch4_window7_224.ms_in22k_ft_in1k swin_base_patch4_window7_224.ms_in22k_ft_in1k)
-img_sizes=(224 224 224 224)
-
-for var in ${!swin_models[@]}
-do
-echo ${swin_models[$var]}
-python swin_quip.py --exp_name ${swin_models[$var]} --parent_dir gptq --wbits 2 --quant gptq --eval_batch_size 8 --pre_gptqH --qfn a --timm_model_name ${swin_models[$var]} --img_size ${img_sizes[$var]}
-sleep 2
-done
+# Swin
+# swin_models=(swin_tiny_patch4_window7_224.ms_in22k_ft_in1k swin_small_patch4_window7_224.ms_in22k_ft_in1k swin_large_patch4_window7_224.ms_in22k_ft_in1k swin_base_patch4_window7_224.ms_in22k_ft_in1k)
+# img_sizes=(224 224 224 224)
+# 
+# for var in ${!swin_models[@]}
+# do
+# echo ${swin_models[$var]}
+# python swin_quip.py --exp_name ${swin_models[$var]} --parent_dir gptq --wbits 2 --quant gptq --eval_batch_size 8 --pre_gptqH --qfn a --timm_model_name ${swin_models[$var]} --img_size ${img_sizes[$var]}
+# sleep 2
+# done
 
 # # cait_models=(cait_xxs24_224.fb_dist_in1k cait_xxs36_224.fb_dist_in1k cait_xs24_384.fb_dist_in1k cait_s36_384.fb_dist_in1k cait_s24_224.fb_dist_in1k cait_m36_384.fb_dist_in1k cait_m48_448.fb_dist_in1k)
 # # img_sizes=(224 224 384 384 224 384 448)
@@ -33,13 +34,15 @@ done
 # ViT
 # vit_models=(vit_tiny_patch16_224 vit_small_patch16_224 vit_medium_patch16_gap_256.sw_in12k_ft_in1k vit_base_patch16_224 vit_large_patch16_224.augreg_in21k_ft_in1k vit_huge_patch14_clip_224.laion2b_ft_in1k)
 # img_sizes=(224 224 224 224 224 224)
-# 
-# for var in ${!vit_models[@]}
-# do
-# echo ${vit_models[$var]}
-# python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir gptq --wbits 2 --quant gptq --eval_batch_size 8 --pre_gptqH --qfn a --timm_model_name ${vit_models[$var]} --img_size ${img_sizes[$var]}
-# sleep 2
-# done
+vit_models=(vit_medium_patch16_gap_256.sw_in12k_ft_in1k)
+img_sizes=(256)
+
+for var in ${!vit_models[@]}
+do
+echo ${vit_models[$var]}
+python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir gptq --wbits 2 --quant gptq --eval_batch_size 8 --pre_gptqH --qfn a --timm_model_name ${vit_models[$var]} --img_size ${img_sizes[$var]}
+sleep 2
+done
 
 # vit_models=(vit_tiny_patch16_224 vit_small_patch16_224 vit_small_patch32_224 vit_base_patch16_224 deit_tiny_patch16_224 deit_small_patch16_224 deit_base_patch16_224)
 # 
