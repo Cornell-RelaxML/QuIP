@@ -35,13 +35,14 @@
 # ViT
 # vit_models=(vit_tiny_patch16_224 vit_small_patch16_224 vit_medium_patch16_gap_256.sw_in12k_ft_in1k vit_base_patch16_224 vit_large_patch16_224.augreg_in21k_ft_in1k vit_huge_patch14_clip_224.laion2b_ft_in1k)
 # img_sizes=(224 224 224 224 224 224)
-vit_models=(vit_medium_patch16_gap_256.sw_in12k_ft_in1k)
-img_sizes=(256)
+vit_models=(vit_small_patch16_224)
+img_sizes=(224)
 
 for var in ${!vit_models[@]}
 do
 echo ${vit_models[$var]}
-python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir ffq_van --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn s --eval_batch_size 8 --tff_redundancy 1 --x_sigma 2.0 --timm_model_name ${vit_models[$var]} --pre_proj --percdamp 0.01  --img_size ${img_sizes[$var]}
+# python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir ffq_van --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn s --eval_batch_size 8 --tff_redundancy 1 --x_sigma 2.0 --timm_model_name ${vit_models[$var]} --pre_proj --percdamp 0.01  --img_size ${img_sizes[$var]}
+python vit_quip.py --exp_name debug_thread --parent_dir ffq_van --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn s --eval_batch_size 8 --tff_redundancy 1 --x_sigma 2.0 --timm_model_name ${vit_models[$var]} --pre_proj --percdamp 0.01  --img_size ${img_sizes[$var]}
 sleep 2
 done
 
