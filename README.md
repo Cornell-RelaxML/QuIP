@@ -7,6 +7,9 @@ Please see our paper for full details.
 
 The code is built on top of [OPTQ's repository](https://github.com/IST-DASLab/gptq). The current code includes the following: 
 
+
+## Update: [QuIP#](https://github.com/Cornell-RelaxML/quip-sharp) is our new and improved method! Includes a lattice codebook and an efficient cuda implementation! Results on quantizing Llama 1 and 2 models, achieving near fp16 quantization performance at 2 bits. 
+
 ## Language Generation
 
 ```
