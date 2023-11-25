@@ -232,6 +232,7 @@ def quantize_vit(model, train_batch, dev, args):
         for name in subset:
             quant_method[name].post_batch()
 
+        breakpoint()
         # Quantize Weights
         for name in subset:
             # print(i, name)

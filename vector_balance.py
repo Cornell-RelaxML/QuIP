@@ -537,7 +537,6 @@ def quantize_weight_vecbal(w,
         # breakpoint()
         wr = torch.clamp((w/scale) + zero, 0, maxq)
         clamped_projs = (wr - zero) * scale
-        breakpoint()
         wr = round_vecbal_Hsort(
             wr, H, nbits, npasses, unbiased=unbiased, qmethod=qmethod, 
             lazy_batch=lazy_batch)
