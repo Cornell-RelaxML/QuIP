@@ -232,7 +232,6 @@ def quantize_vit(model, train_batch, dev, args):
         for name in subset:
             quant_method[name].post_batch()
 
-        breakpoint()
         # Quantize Weights
         for name in subset:
             # print(i, name)
@@ -529,7 +528,9 @@ if __name__ == '__main__':
 
     # logging 
     exp_name = args.exp_name # 'mlp_attn_quant_weiner_full'
-    results_dir = 'output_new'
+    # results_dir = 'output_new'
+    # results_dir = 'output_calib_data'
+    results_dir = 'output_sigma'
     if exp_name != 'debug_thread':
         if args.save_path is None:
             current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

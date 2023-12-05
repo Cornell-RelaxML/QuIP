@@ -2,6 +2,7 @@ data/
 output/
 __pycache__/
 output_new/
+output*/
 
 
 # temp files
