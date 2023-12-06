@@ -12,7 +12,9 @@ from near import Nearest
 from modelutils import *
 from quant import *
 
-from utils import find_layers, DEV, set_seed, get_wikitext2, get_ptb, get_c4, get_ptb_new, get_c4_new, get_loaders, export_quant_table, gen_conditions
+from utils.llama_utils import get_wikitext2, get_ptb, get_c4, get_ptb_new, get_c4_new, get_loaders, gen_conditions
+from utils.llama_export import export_quant_table
+from datautils import set_seed
 from texttable import Texttable
 from tqdm import tqdm
 
@@ -72,7 +74,10 @@ def llama_sequential(model, dataloader, dev):
     quantizers = {}
     tff_rand_seeds = {}
     errors, Hmags, times = [], [], []
-    observer = Observer()
+    if args.observe:
+        observer = Observer()
+    else:
+        observer = None
     for i in tqdm(range(len(layers))):
 
         print(f'Quantizing layer {i+1}/{len(layers)}..')
@@ -521,23 +526,138 @@ def llama_pack(model, quantizers, wbits, groupsize):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=42,
+                        help="random seed for initialization")
+    parser.add_argument("--exp_name", type=str, default='debug_thread',
+                        help="Name of this run. Used for monitoring.")
+    parser.add_argument("--img_size", type=int, default=224,
+                        help="resolution of the square images")
+    parser.add_argument("--device", type=str, default=None,
+                        help="device that you want to run on; currently this is just a placeholder")
+    parser.add_argument("--local_rank", type=int, default=-1,
+                        help="relevant when you have multiple devices")
+    parser.add_argument("--train_batch_size", type=int, default=128,
+                        help="training batch size; Here it serves as nsamples as well")
+    parser.add_argument("--nsamples", type=int, default=128,
+                        help="nsamples to be used for quantization")
+    parser.add_argument("--eval_batch_size", type=int, default=128,
+                        help="eval batch size")
+    parser.add_argument("--coef_est_type", type=str, default='weiner', choices = ['weiner', 'naive'],
+                        help="how to estimate the weights from the quantized versions")
+    parser.add_argument("--save_path", type=str, default=None, 
+                        help="provide the savepath; otherwise a cat of exp_name and current time will be used")
+    parser.add_argument("--parent_dir", type=str, default=None, 
+                        help="parent dir for storing the results")
+    parser.add_argument("--Weiner_m_diag_rank", type=int, default=3,
+                        help="set the rank for the LowRank approximation of the residue after (Weiner - diag)")
+    parser.add_argument('--tff_redundancy', type=float, default=1,
+                        help="Redundancy in tffs")
+    parser.add_argument('--wiener_filt_en', action='store_true',
+                        help="enable the Wiener filter after TFF based quantization")
+    parser.add_argument('--clamp_noise_filt_en', action='store_true',
+                        help="Wiener filter based clamping noise filter")
+    parser.add_argument('--num_vals', type=int, default=1,
+                        help="num vals")
+    parser.add_argument('--x_sigma', type=float, default=2,
+                        help="x times sigma for symm scale")
+
+    parser.add_argument(
+        '--percdamp',
+        type=float,
+        default=.01,
+        help='Percent of the average Hessian diagonal to use for dampening.')
+    parser.add_argument('--quant',
+                        choices=['allbal', 
+                        'ldlq', 'ldlqRG', 'ldlbal_admm', 
+                        'nearest', 'gptq'],
+                        default='gptq',
+                        help='Which quantization method to use.')
+    parser.add_argument(
+        '--wbits',
+        type=int,
+        default=2,
+        choices=[1, 2, 3, 4, 16],
+        help='#bits to use for quantization; use 16 for evaluating base model.')
+    parser.add_argument(
+        '--npasses',
+        type=int,
+        default=0,
+        help='number passes to repeat balance loop over 1-d.')
+    parser.add_argument(
+        '--groupsize',
+        type=int,
+        default=-1,
+        help='Groupsize to use for quantization; default uses full row.')
+    parser.add_argument(
+        '--pre_tff',
+        action='store_true',
+        help='preprocessing')
+    parser.add_argument(
+        '--pre_gptqH',
+        action='store_true',
+        help='preprocessing')
+    parser.add_argument(
+        '--pre_rescale',
+        action='store_true',
+        help='preprocessing')
+    parser.add_argument(
+        '--pre_proj',
+        action='store_true',
+        help='preprocessing')
+    parser.add_argument(
+        '--pre_proj_extra',
+        type=int,
+        default=0,
+        choices=[0, 1, 2],
+        help='Extra options to control pre_proj step.')
+    parser.add_argument('--qfn',
+                        type=str,
+                        default='a',
+                        help='qfn: a is default, b is sym incoherent based, s is tff symm scaling based')
+    parser.add_argument('--save',
+                        type=str,
+                        default='',
+                        help='Save quantized checkpoint under this name.')
+    parser.add_argument('--load',
+                        type=str,
+                        default='',
+                        help='Load quantized model.')
+    # parser.add_argument('--benchmark',
+    #                     type=int,
+    #                     default=0,
+    #                     help='Number of tokens to use for benchmarking.')
+    parser.add_argument(
+        '--check',
+        action='store_true',
+        help=
+        'Whether to compute perplexity during benchmarking for verification.')
+    parser.add_argument(
+        '--proxy_only',
+        action='store_true',
+        help=
+        'Only compute proxy objective (w^T H w)')
+    parser.add_argument(
+        '--unbiased',
+        action='store_true',
+        help='unbiased')
+    parser.add_argument(
+        '--incoh_processing',
+        action='store_true',
+        help='incoherence processing')
+    parser.add_argument(
+        '--lazy_batch',
+        action='store_true',
+        help='lazy batch updates in blocks as used in OPTQ')
+
 
     parser.add_argument('model', type=str, help='llama model to load')
     parser.add_argument('dataset', type=str, choices=['wikitext2', 'ptb', 'c4'], help='Where to extract calibration data from.')
-    parser.add_argument('--seed', type=int, default=0, help='Seed for sampling the calibration data.')
-    parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration data samples.')
-    parser.add_argument('--percdamp', type=float, default=.01, help='Percent of the average Hessian diagonal to use for dampening.')
     parser.add_argument('--nearest', action='store_true', help='Whether to run the RTN baseline.')
-    parser.add_argument('--wbits', type=int, default=2, choices=[2, 3, 4, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument('--trits', action='store_true', help='Whether to use trits for quantization.')
-    parser.add_argument('--groupsize', type=int, default=-1, help='Groupsize to use for quantization; default uses full row.')
     parser.add_argument('--eval', action='store_true', help='evaluate quantized model.')
     parser.add_argument('--test-generation', action='store_true', help='test generation.')
-    parser.add_argument('--save', type=str, default='', help='Save quantized checkpoint under this name.')
     parser.add_argument('--save_safetensors', type=str, default='', help='Save quantized `.safetensors` checkpoint under this name.')
-    parser.add_argument('--load', type=str, default='', help='Load quantized model.')
     parser.add_argument('--benchmark', type=int, default=0, help='Number of tokens to use for benchmarking.')
-    parser.add_argument('--check', action='store_true', help='Whether to compute perplexity during benchmarking for verification.')
     parser.add_argument('--sym', action='store_true', help='Whether to perform symmetric quantization.')
     parser.add_argument('--act-order', action='store_true', help='Whether to apply the activation order GPTQ heuristic')
     parser.add_argument('--true-sequential', action='store_true', help='Whether to run in true sequential model.')
