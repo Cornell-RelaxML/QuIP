@@ -81,7 +81,7 @@ class QuantMethod:
     '''
     Base class for quantization methods
     '''
-    def __init__(self, layer):
+    def __init__(self, layer, observe=False):
         self.layer = layer
         self.dev = self.layer.weight.device
         W = layer.weight.data.clone()
@@ -95,6 +95,7 @@ class QuantMethod:
         self.nsamples = 0
         self.preproc_done = False
         self.inps = []
+        self.observe = observe
 
     def add_batch(self, inp, out):
         if DEBUG:
