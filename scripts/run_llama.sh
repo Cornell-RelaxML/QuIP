@@ -1,0 +1,1 @@
+python llama.py /data/harsha/llama/hf_llama2/ c4 --eval --new_eval --wbits 2 --quant gptq --pre_gptqH --qfn a 

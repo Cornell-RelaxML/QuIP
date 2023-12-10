@@ -78,7 +78,7 @@ def llama_sequential(model, dataloader, dev):
         observer = Observer()
     else:
         observer = None
-    for i in tqdm(range(len(layers))):
+    for i in range(len(layers)):
 
         print(f'Quantizing layer {i+1}/{len(layers)}..')
         print('+------------------+--------------+------------+-----------+-------+')
