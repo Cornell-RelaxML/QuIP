@@ -421,7 +421,9 @@ def benchmark(model, input_ids, check=False):
 
 @torch.no_grad()
 def llama_eval(model, testenc, dev):
+    h = open('llama_ff.log', 'a')
     print('Evaluating ...')
+    print('Evaluating ...', file=h)
 
     testenc = testenc.input_ids
     nsamples = testenc.numel() // model.seqlen
@@ -469,6 +471,7 @@ def llama_eval(model, testenc, dev):
 
     for i in range(len(layers)):
         print(i)
+        print(i, file=h)
         layer = layers[i].to(dev)
 
         if args.nearest:
@@ -506,6 +509,8 @@ def llama_eval(model, testenc, dev):
         nlls.append(neg_log_likelihood)
     ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))
     print(ppl.item())
+    print(ppl.item(), file=h)
+    h.close()
 
     model.config.use_cache = use_cache
 
@@ -702,6 +707,7 @@ if __name__ == '__main__':
             input_ids = next(iter(dataloader))[0][:, :args.benchmark]
             benchmark(model, input_ids, check=args.check)
 
+    h = open('llama_ff.log', 'a')
     if args.eval:
         datasets = ['wikitext2', 'ptb', 'c4']
         if args.new_eval:
@@ -709,7 +715,9 @@ if __name__ == '__main__':
         for dataset in datasets:
             dataloader, testloader = get_loaders(dataset, seed=args.seed, model=args.model, seqlen=model.seqlen)
             print(dataset)
+            print(dataset, file=h)
             llama_eval(model, testloader, DEV)
+    h.close()
     
     if args.test_generation:
         gpus = [torch.device('cuda:%d' % i) for i in range(torch.cuda.device_count())]
