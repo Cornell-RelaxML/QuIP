@@ -96,6 +96,7 @@ class QuantMethod:
         self.preproc_done = False
         self.inps = []
         self.observe = observe
+        self.dtype = layer.weight.dtype
 
     def add_batch(self, inp, out):
         if DEBUG:

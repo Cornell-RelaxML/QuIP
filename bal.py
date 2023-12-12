@@ -41,7 +41,7 @@ class Balance(QuantMethod):
             qmethod=self.qmethod,
             lazy_batch=lazy_batch
         )
-        self.layer.weight.data = quant_w
+        self.layer.weight.data = quant_w.to(self.dtype)
         self.error_compute(w, quant_w)
         self.postproc()
         # print('time %.2f' % (time.time() - tick))

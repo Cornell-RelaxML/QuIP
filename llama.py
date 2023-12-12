@@ -4,6 +4,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import quant
+import logging
+from datetime import timedelta
 
 # from gptq import GPTQ, Observer
 from gptq import *
@@ -22,7 +24,7 @@ from utils.construct_tff import construct_real_tff
 import pickle as pkl
 
 @torch.no_grad()
-def llama_sequential(model, dataloader, dev):
+def llama_sequential(model, dataloader, dev, seed = 0):
     print('Starting ...')
 
     use_cache = model.config.use_cache
@@ -78,6 +80,7 @@ def llama_sequential(model, dataloader, dev):
         observer = Observer()
     else:
         observer = None
+    lin_count = 0
     for i in range(len(layers)):
 
         print(f'Quantizing layer {i+1}/{len(layers)}..')
@@ -93,6 +96,7 @@ def llama_sequential(model, dataloader, dev):
             sequential = [list(full.keys())]
 
         for names in sequential:
+            lin_count += 1
             subset = {n: full[n] for n in names}
             quant_method = {}
             for name in subset:
@@ -139,11 +143,13 @@ def llama_sequential(model, dataloader, dev):
                         k_tff = int(v_n // l_tff * args.tff_redundancy)
                         tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
                     g_u = torch.Generator() # use this to store the seed for later
-                    u_seed = g_u.seed()
+                    g_u.manual_seed(seed + lin_count)
+                    u_seed = g_u.initial_seed()
                     rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
                     Q_u, _ = torch.linalg.qr(rand_mat_u)
                     g_v = torch.Generator() # use this to store the seed for later
-                    v_seed = g_v.seed()
+                    g_v.manual_seed(seed + lin_count)
+                    v_seed = g_v.initial_seed()
                     rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
                     Q_v, _ = torch.linalg.qr(rand_mat_v)
                     tff_rand_seeds[f'quantized model.decoder.layers.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
@@ -172,9 +178,10 @@ def llama_sequential(model, dataloader, dev):
 
             for name in subset:
                 if quant_method[name].nsamples == 0:
-                    print(name)
+                    print(f'{name} has nsamples = 0')
                     breakpoint()
                     continue
+                print(name)
                 quant_method[name].preproc(
                                     preproc_gptqH=args.pre_gptqH, percdamp=args.percdamp,
                                     preproc_rescale=args.pre_rescale, 
@@ -421,9 +428,8 @@ def benchmark(model, input_ids, check=False):
 
 @torch.no_grad()
 def llama_eval(model, testenc, dev):
-    h = open('llama_ff.log', 'a')
     print('Evaluating ...')
-    print('Evaluating ...', file=h)
+    logging.info('Evaluating ...')
 
     testenc = testenc.input_ids
     nsamples = testenc.numel() // model.seqlen
@@ -471,7 +477,6 @@ def llama_eval(model, testenc, dev):
 
     for i in range(len(layers)):
         print(i)
-        print(i, file=h)
         layer = layers[i].to(dev)
 
         if args.nearest:
@@ -509,8 +514,7 @@ def llama_eval(model, testenc, dev):
         nlls.append(neg_log_likelihood)
     ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))
     print(ppl.item())
-    print(ppl.item(), file=h)
-    h.close()
+    logging.info(ppl.item())
 
     model.config.use_cache = use_cache
 
@@ -676,6 +680,22 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    # Setup CUDA, GPU & distributed training
+    if args.local_rank == -1:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        args.n_gpu = torch.cuda.device_count()
+        print(f'{args.n_gpu = }')
+    else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
+        torch.cuda.set_device(args.local_rank)
+        device = torch.device("cuda", args.local_rank)
+        torch.distributed.init_process_group(backend='nccl',
+                                             timeout=timedelta(minutes=60))
+        args.n_gpu = 1
+    args.device = device
+    # seed the experiment 
+    set_seed(args)
+    # torch.use_deterministic_algorithms(True)
+
     if args.layers_dist:
         gpu_dist = [int(x) for x in args.layers_dist.split(':')]
     else:
@@ -694,7 +714,7 @@ if __name__ == '__main__':
 
     if not args.load and args.wbits < 16 and not args.nearest:
         tick = time.time()
-        quantizers = llama_sequential(model, dataloader, DEV)
+        quantizers = llama_sequential(model, dataloader, DEV, args.seed)
         print(time.time() - tick)
 
     if args.benchmark:
@@ -707,7 +727,8 @@ if __name__ == '__main__':
             input_ids = next(iter(dataloader))[0][:, :args.benchmark]
             benchmark(model, input_ids, check=args.check)
 
-    h = open('llama_ff.log', 'a')
+    filename = f'{args.exp_name}.log'
+    logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if args.eval:
         datasets = ['wikitext2', 'ptb', 'c4']
         if args.new_eval:
@@ -715,9 +736,11 @@ if __name__ == '__main__':
         for dataset in datasets:
             dataloader, testloader = get_loaders(dataset, seed=args.seed, model=args.model, seqlen=model.seqlen)
             print(dataset)
-            print(dataset, file=h)
+            logging.info(dataset)
             llama_eval(model, testloader, DEV)
-    h.close()
+    
+    logging.info('------------------------------------------------------------------------')
+    logging.info('------------------------------------------------------------------------')
     
     if args.test_generation:
         gpus = [torch.device('cuda:%d' % i) for i in range(torch.cuda.device_count())]
