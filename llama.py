@@ -13,6 +13,7 @@ from bal import Balance
 from near import Nearest
 from modelutils import *
 from quant import *
+from method import rand_ortho_butterfly
 
 from utils.llama_utils import get_wikitext2, get_ptb, get_c4, get_ptb_new, get_c4_new, get_loaders, gen_conditions
 from utils.llama_export import export_quant_table
@@ -142,19 +143,24 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                     if v_n not in tffs:
                         k_tff = int(v_n // l_tff * args.tff_redundancy)
                         tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
-                    g_u = torch.Generator() # use this to store the seed for later
-                    g_u.manual_seed(seed + lin_count)
-                    u_seed = g_u.initial_seed()
-                    rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
-                    Q_u, _ = torch.linalg.qr(rand_mat_u)
-                    g_v = torch.Generator() # use this to store the seed for later
-                    g_v.manual_seed(seed + lin_count)
-                    v_seed = g_v.initial_seed()
-                    rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
-                    Q_v, _ = torch.linalg.qr(rand_mat_v)
-                    tff_rand_seeds[f'quantized model.decoder.layers.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
-                    quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T.to(dev)
-                    quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T.to(dev)
+                    # g_u = torch.Generator() # use this to store the seed for later
+                    # g_u.manual_seed(seed + lin_count)
+                    # u_seed = g_u.initial_seed()
+                    # rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
+                    # Q_u, _ = torch.linalg.qr(rand_mat_u)
+                    # g_v = torch.Generator() # use this to store the seed for later
+                    # g_v.manual_seed(seed + lin_count)
+                    # v_seed = g_v.initial_seed()
+                    # rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
+                    # Q_v, _ = torch.linalg.qr(rand_mat_v)
+                    # tff_rand_seeds[f'quantized model.decoder.layers.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
+                    # quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T.to(dev)
+                    # quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T.to(dev)
+
+                    U = rand_ortho_butterfly(u_n).to(torch.float32).to(dev)
+                    V = rand_ortho_butterfly(v_n).to(torch.float32).to(dev)
+                    quant_method[name].U = tffs[u_n].view(-1, u_n) @ U.T.to(dev)
+                    quant_method[name].V = tffs[v_n].view(-1, v_n) @ V.T.to(dev)
 
                 quant_method[name].name = name
 
