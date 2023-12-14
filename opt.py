@@ -11,6 +11,9 @@ from quant import *
 
 from tqdm import tqdm
 
+from utils.construct_tff import construct_real_tff
+import logging
+
 def get_opt(model):
     import torch
 
@@ -84,12 +87,18 @@ def opt_sequential(model, dataloader, dev, args):
         model.model.decoder.project_in = model.model.decoder.project_in.cpu()
     torch.cuda.empty_cache()
 
+    tffs = {}
+    l_tff = 8
+
     outs = torch.zeros_like(inps)
     attention_mask = cache['attention_mask']
 
     print('Ready.')
 
     quantizers = {}
+    tff_rand_seeds = {}
+    quantized_weights = {}
+    Wiener_params = {}
     errors, Hmags, times = [], [], []
     for i in tqdm(range(len(layers))):
         layer = layers[i].to(dev)
@@ -127,6 +136,29 @@ def opt_sequential(model, dataloader, dev, args):
                                                sym=False,
                                                qfn=args.qfn,
                                                mse=False)
+
+            if args.pre_tff:
+                u_n = subset[name].weight.shape[0]
+                v_n = subset[name].weight.shape[1]
+                if u_n not in tffs:
+                    k_tff = int(u_n // l_tff * args.tff_redundancy)
+                    tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
+                if v_n not in tffs:
+                    k_tff = int(v_n // l_tff * args.tff_redundancy)
+                    tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
+                g_u = torch.Generator() # use this to store the seed for later
+                u_seed = g_u.seed()
+                rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
+                Q_u, _ = torch.linalg.qr(rand_mat_u)
+                g_v = torch.Generator() # use this to store the seed for later
+                v_seed = g_v.seed()
+                rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
+                Q_v, _ = torch.linalg.qr(rand_mat_v)
+                tff_rand_seeds[f'quantized model.decoder.layers.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
+                quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T.to(dev)
+                quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T.to(dev)
+
+            quant_method[name].name = name
 
         def add_batch(name):
 
@@ -295,6 +327,7 @@ def opt_eval(model, testenc, dev):
         nlls.append(neg_log_likelihood)
     ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))
     print(ppl.item())
+    logging.info(ppl.item())
 
     model.config.use_cache = use_cache
 
@@ -488,6 +521,42 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('--seed', type=int, default=42,
+                        help="random seed for initialization")
+    parser.add_argument("--exp_name", type=str, default='debug_thread',
+                        help="Name of this run. Used for monitoring.")
+    parser.add_argument("--img_size", type=int, default=224,
+                        help="resolution of the square images")
+    parser.add_argument("--device", type=str, default=None,
+                        help="device that you want to run on; currently this is just a placeholder")
+    parser.add_argument("--local_rank", type=int, default=-1,
+                        help="relevant when you have multiple devices")
+    parser.add_argument("--train_batch_size", type=int, default=128,
+                        help="training batch size; Here it serves as nsamples as well")
+    parser.add_argument("--nsamples", type=int, default=128,
+                        help="nsamples to be used for quantization")
+    parser.add_argument("--eval_batch_size", type=int, default=128,
+                        help="eval batch size")
+    parser.add_argument("--coef_est_type", type=str, default='weiner', choices = ['weiner', 'naive'],
+                        help="how to estimate the weights from the quantized versions")
+    parser.add_argument("--save_path", type=str, default=None, 
+                        help="provide the savepath; otherwise a cat of exp_name and current time will be used")
+    parser.add_argument("--parent_dir", type=str, default=None, 
+                        help="parent dir for storing the results")
+    parser.add_argument("--Weiner_m_diag_rank", type=int, default=3,
+                        help="set the rank for the LowRank approximation of the residue after (Weiner - diag)")
+    parser.add_argument('--tff_redundancy', type=float, default=1,
+                        help="Redundancy in tffs")
+    parser.add_argument('--wiener_filt_en', action='store_true',
+                        help="enable the Wiener filter after TFF based quantization")
+    parser.add_argument('--clamp_noise_filt_en', action='store_true',
+                        help="Wiener filter based clamping noise filter")
+    parser.add_argument('--num_vals', type=int, default=1,
+                        help="num vals")
+    parser.add_argument('--x_sigma', type=float, default=2,
+                        help="x times sigma for symm scale")
+
+
     parser.add_argument('model',
                         type=str,
                         help='OPT model to load; pass `facebook/opt-X`.')
@@ -495,10 +564,6 @@ if __name__ == '__main__':
                         type=str,
                         choices=['wikitext2', 'ptb', 'c4'],
                         help='Where to extract calibration data from.')
-    parser.add_argument('--seed',
-                        type=int,
-                        default=0,
-                        help='Seed for sampling the calibration data.')
     parser.add_argument('--nsamples',
                         type=int,
                         default=128,
@@ -645,6 +710,8 @@ if __name__ == '__main__':
     #     opt_pack3(model, quantizers)
         torch.save(model.state_dict(), args.save)
 
+    filename = f'{args.exp_name}.log'
+    logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if not args.proxy_only:
         # for dataset in ['wikitext2', 'ptb', 'c4']:
         for dataset in ['wikitext2', 'ptb-new', 'c4-new']:
@@ -653,5 +720,8 @@ if __name__ == '__main__':
                                                 model=args.model,
                                                 seqlen=model.seqlen)
             print(dataset)
+            logging.info(dataset)
             opt_eval(model, testloader, DEV)
+    logging.info('------------------------------------------------------------------------')
+    logging.info('------------------------------------------------------------------------')
 
