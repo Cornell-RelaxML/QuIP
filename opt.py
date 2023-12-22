@@ -88,7 +88,6 @@ def opt_sequential(model, dataloader, dev, args):
     torch.cuda.empty_cache()
 
     tffs = {}
-    k_tff = 8
 
     outs = torch.zeros_like(inps)
     attention_mask = cache['attention_mask']
@@ -144,12 +143,16 @@ def opt_sequential(model, dataloader, dev, args):
                 u_n = subset[name].weight.shape[0]
                 v_n = subset[name].weight.shape[1]
                 if u_n not in tffs:
-                    l_tff = int(u_n // k_tff * args.tff_redundancy)
-                    if l_tff % 2 !=0: l_tff += 1
+                    l_tff = u_n // 16
+                    k_tff = round(u_n // l_tff * args.tff_redundancy)
+                    logging.info(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {u_n = }')
+                    print(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {u_n = }')
                     tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
                 if v_n not in tffs:
-                    l_tff = int(v_n // k_tff * args.tff_redundancy)
-                    if l_tff % 2 !=0: l_tff += 1
+                    l_tff = v_n // 16
+                    k_tff = round(v_n // l_tff * args.tff_redundancy)
+                    logging.info(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {v_n = }')
+                    print(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {v_n = }')
                     tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
                 g_u = torch.Generator() # use this to store the seed for later
                 u_seed = g_u.seed()
@@ -669,6 +672,9 @@ if __name__ == '__main__':
         args.qfn         = 'b'
 
     results_dir = 'output_opt'
+    filename = f'{args.exp_name}.log'
+    logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     if args.load:
         model = load_quant(args.model, args.load)
         model.eval()
@@ -718,8 +724,6 @@ if __name__ == '__main__':
     #     opt_pack3(model, quantizers)
         torch.save(model.state_dict(), args.save)
 
-    filename = f'{args.exp_name}.log'
-    logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if not args.proxy_only:
         # for dataset in ['wikitext2', 'ptb', 'c4']:
         ppls = []
