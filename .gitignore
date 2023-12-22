@@ -3,6 +3,7 @@ output/
 __pycache__/
 output_new/
 output*/
+hf_llama2/
 
 
 # temp files

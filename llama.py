@@ -71,7 +71,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
     position_ids = cache['position_ids']
 
     tffs = {}
-    l_tff = 8
+    k_tff = 8
     print('Ready.')
 
     quantizers = {}
@@ -138,10 +138,12 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                     u_n = subset[name].weight.shape[0]
                     v_n = subset[name].weight.shape[1]
                     if u_n not in tffs:
-                        k_tff = int(u_n // l_tff * args.tff_redundancy)
+                        l_tff = int(u_n // k_tff * args.tff_redundancy)
+                        if l_tff % 2 !=0: l_tff += 1
                         tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
                     if v_n not in tffs:
-                        k_tff = int(v_n // l_tff * args.tff_redundancy)
+                        l_tff = int(v_n // k_tff * args.tff_redundancy)
+                        if l_tff % 2 !=0: l_tff += 1
                         tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
                     # g_u = torch.Generator() # use this to store the seed for later
                     # g_u.manual_seed(seed + lin_count)
@@ -524,6 +526,8 @@ def llama_eval(model, testenc, dev):
 
     model.config.use_cache = use_cache
 
+    return ppl.item()
+
 # TODO: perform packing on GPU
 def llama_pack(model, quantizers, wbits, groupsize):
     layers = find_layers(model)
@@ -561,7 +565,7 @@ if __name__ == '__main__':
                         help="how to estimate the weights from the quantized versions")
     parser.add_argument("--save_path", type=str, default=None, 
                         help="provide the savepath; otherwise a cat of exp_name and current time will be used")
-    parser.add_argument("--parent_dir", type=str, default=None, 
+    parser.add_argument("--parent_dir", type=str, default='test', 
                         help="parent dir for storing the results")
     parser.add_argument("--Weiner_m_diag_rank", type=int, default=3,
                         help="set the rank for the LowRank approximation of the residue after (Weiner - diag)")
@@ -702,6 +706,8 @@ if __name__ == '__main__':
     set_seed(args)
     # torch.use_deterministic_algorithms(True)
 
+    results_dir = 'output_sigma'
+
     if args.layers_dist:
         gpu_dist = [int(x) for x in args.layers_dist.split(':')]
     else:
@@ -736,6 +742,7 @@ if __name__ == '__main__':
     filename = f'{args.exp_name}.log'
     logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if args.eval:
+        ppls = []
         datasets = ['wikitext2', 'ptb', 'c4']
         if args.new_eval:
             datasets = ['wikitext2', 'ptb-new', 'c4-new']
@@ -743,10 +750,19 @@ if __name__ == '__main__':
             dataloader, testloader = get_loaders(dataset, seed=args.seed, model=args.model, seqlen=model.seqlen)
             print(dataset)
             logging.info(dataset)
-            llama_eval(model, testloader, DEV)
+            ppl = llama_eval(model, testloader, DEV)
+            ppls.appen(ppl)
     
-    logging.info('------------------------------------------------------------------------')
-    logging.info('------------------------------------------------------------------------')
+        logging.info('------------------------------------------------------------------------')
+        logging.info('------------------------------------------------------------------------')
+
+        import csv
+        import os
+        results  = [args.model, args.tff_redundancy, ppls[0], ppls[1], ppls[2]]
+        csv_file_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}','results.csv')
+        with open(csv_file_path, mode='a', newline='') as handle:
+            writer = csv.writer(handle)
+            writer.writerow(results)
     
     if args.test_generation:
         gpus = [torch.device('cuda:%d' % i) for i in range(torch.cuda.device_count())]

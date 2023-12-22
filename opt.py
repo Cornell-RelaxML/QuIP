@@ -88,7 +88,7 @@ def opt_sequential(model, dataloader, dev, args):
     torch.cuda.empty_cache()
 
     tffs = {}
-    l_tff = 8
+    k_tff = 8
 
     outs = torch.zeros_like(inps)
     attention_mask = cache['attention_mask']
@@ -114,7 +114,8 @@ def opt_sequential(model, dataloader, dev, args):
                                                perchannel=True,
                                                sym=False,
                                                qfn=args.qfn,
-                                               mse=False)
+                                               mse=False, 
+                                               x_sigma= args.x_sigma)
             elif args.quant == 'nearest':
                 quant_method[name] = Nearest(subset[name])
                 quant_method[name].quantizer = Quantizer()
@@ -122,7 +123,8 @@ def opt_sequential(model, dataloader, dev, args):
                                                perchannel=True,
                                                sym=False,
                                                qfn=args.qfn,
-                                               mse=False)
+                                               mse=False, 
+                                               x_sigma= args.x_sigma)
             elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
                 quant_method[name] = Balance(subset[name])
                 quant_method[name].configure(
@@ -135,16 +137,19 @@ def opt_sequential(model, dataloader, dev, args):
                                                perchannel=True,
                                                sym=False,
                                                qfn=args.qfn,
-                                               mse=False)
+                                               mse=False, 
+                                               x_sigma= args.x_sigma)
 
             if args.pre_tff:
                 u_n = subset[name].weight.shape[0]
                 v_n = subset[name].weight.shape[1]
                 if u_n not in tffs:
-                    k_tff = int(u_n // l_tff * args.tff_redundancy)
+                    l_tff = int(u_n // k_tff * args.tff_redundancy)
+                    if l_tff % 2 !=0: l_tff += 1
                     tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
                 if v_n not in tffs:
-                    k_tff = int(v_n // l_tff * args.tff_redundancy)
+                    l_tff = int(v_n // k_tff * args.tff_redundancy)
+                    if l_tff % 2 !=0: l_tff += 1
                     tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
                 g_u = torch.Generator() # use this to store the seed for later
                 u_seed = g_u.seed()
@@ -330,6 +335,8 @@ def opt_eval(model, testenc, dev):
     logging.info(ppl.item())
 
     model.config.use_cache = use_cache
+
+    return ppl.item()
 
 
 # TODO: perform packing on GPU
@@ -541,7 +548,7 @@ if __name__ == '__main__':
                         help="how to estimate the weights from the quantized versions")
     parser.add_argument("--save_path", type=str, default=None, 
                         help="provide the savepath; otherwise a cat of exp_name and current time will be used")
-    parser.add_argument("--parent_dir", type=str, default=None, 
+    parser.add_argument("--parent_dir", type=str, default='temp', 
                         help="parent dir for storing the results")
     parser.add_argument("--Weiner_m_diag_rank", type=int, default=3,
                         help="set the rank for the LowRank approximation of the residue after (Weiner - diag)")
@@ -564,10 +571,6 @@ if __name__ == '__main__':
                         type=str,
                         choices=['wikitext2', 'ptb', 'c4'],
                         help='Where to extract calibration data from.')
-    parser.add_argument('--nsamples',
-                        type=int,
-                        default=128,
-                        help='Number of calibration data samples.')
     parser.add_argument(
         '--percdamp',
         type=float,
@@ -595,6 +598,10 @@ if __name__ == '__main__':
         type=int,
         default=-1,
         help='Groupsize to use for quantization; default uses full row.')
+    parser.add_argument(
+        '--pre_tff',
+        action='store_true',
+        help='preprocessing')
     parser.add_argument(
         '--pre_gptqH',
         action='store_true',
@@ -661,6 +668,7 @@ if __name__ == '__main__':
         args.proj_extra  = 1
         args.qfn         = 'b'
 
+    results_dir = 'output_opt'
     if args.load:
         model = load_quant(args.model, args.load)
         model.eval()
@@ -714,6 +722,7 @@ if __name__ == '__main__':
     logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if not args.proxy_only:
         # for dataset in ['wikitext2', 'ptb', 'c4']:
+        ppls = []
         for dataset in ['wikitext2', 'ptb-new', 'c4-new']:
             dataloader, testloader = get_loaders(dataset,
                                                 seed=args.seed,
@@ -721,7 +730,17 @@ if __name__ == '__main__':
                                                 seqlen=model.seqlen)
             print(dataset)
             logging.info(dataset)
-            opt_eval(model, testloader, DEV)
+            ppl = opt_eval(model, testloader, DEV)
+            ppls.append(ppl)
     logging.info('------------------------------------------------------------------------')
     logging.info('------------------------------------------------------------------------')
 
+    import csv
+    import os
+    results  = [args.model, args.tff_redundancy, ppls[0], ppls[1], ppls[2]]
+    write_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}')
+    os.makedirs(write_path, exist_ok=True)
+    csv_file_path = os.path.join(write_path,'results.csv')
+    with open(csv_file_path, mode='a', newline='') as handle:
+        writer = csv.writer(handle)
+        writer.writerow(results)
