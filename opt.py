@@ -741,7 +741,7 @@ if __name__ == '__main__':
 
     import csv
     import os
-    results  = [args.model, args.tff_redundancy, ppls[0], ppls[1], ppls[2]]
+    results  = [args.exp_name, args.tff_redundancy, ppls[0], ppls[1], ppls[2]]
     write_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}')
     os.makedirs(write_path, exist_ok=True)
     csv_file_path = os.path.join(write_path,'results.csv')
