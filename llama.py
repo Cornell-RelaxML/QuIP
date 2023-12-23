@@ -71,7 +71,6 @@ def llama_sequential(model, dataloader, dev, seed = 0):
     position_ids = cache['position_ids']
 
     tffs = {}
-    k_tff = 8
     print('Ready.')
 
     quantizers = {}
@@ -138,12 +137,16 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                     u_n = subset[name].weight.shape[0]
                     v_n = subset[name].weight.shape[1]
                     if u_n not in tffs:
-                        l_tff = int(u_n // k_tff * args.tff_redundancy)
-                        if l_tff % 2 !=0: l_tff += 1
+                        l_tff = u_n // 16
+                        k_tff = round(u_n // l_tff * args.tff_redundancy)
+                        logging.info(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {u_n = }')
+                        print(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {u_n = }')
                         tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
                     if v_n not in tffs:
-                        l_tff = int(v_n // k_tff * args.tff_redundancy)
-                        if l_tff % 2 !=0: l_tff += 1
+                        l_tff = v_n // 16
+                        k_tff = round(v_n // l_tff * args.tff_redundancy)
+                        logging.info(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {v_n = }')
+                        print(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {v_n = }')
                         tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
                     # g_u = torch.Generator() # use this to store the seed for later
                     # g_u.manual_seed(seed + lin_count)
@@ -705,8 +708,11 @@ if __name__ == '__main__':
     # seed the experiment 
     set_seed(args)
     # torch.use_deterministic_algorithms(True)
+    filename = f'{args.exp_name}.log'
+    logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    results_dir = 'output_sigma'
+    # results_dir = 'output_sigma'
+    results_dir = 'output_llama'
 
     if args.layers_dist:
         gpu_dist = [int(x) for x in args.layers_dist.split(':')]
@@ -739,8 +745,6 @@ if __name__ == '__main__':
             input_ids = next(iter(dataloader))[0][:, :args.benchmark]
             benchmark(model, input_ids, check=args.check)
 
-    filename = f'{args.exp_name}.log'
-    logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if args.eval:
         ppls = []
         datasets = ['wikitext2', 'ptb', 'c4']
@@ -758,8 +762,10 @@ if __name__ == '__main__':
 
         import csv
         import os
-        results  = [args.model, args.tff_redundancy, ppls[0], ppls[1], ppls[2]]
-        csv_file_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}','results.csv')
+        results  = [args.exp_name, args.tff_redundancy, ppls[0], ppls[1], ppls[2]]
+        write_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}')
+        os.makedirs(write_path, exist_ok=True)
+        csv_file_path = os.path.join(write_path,'results.csv')
         with open(csv_file_path, mode='a', newline='') as handle:
             writer = csv.writer(handle)
             writer.writerow(results)
