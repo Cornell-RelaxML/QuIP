@@ -41,20 +41,27 @@
 # python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_fq_2p4 --tff_redundancy 1.2 --wbits 2 --quant ldlq --pre_gptqH --pre_tff --qfn s --x_sigma 2.0 --pre_proj 
 # python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_fq_2p6 --tff_redundancy 1.3 --wbits 2 --quant ldlq --pre_gptqH --pre_tff --qfn s --x_sigma 2.0 --pre_proj 
 # python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_fq_2p8 --tff_redundancy 1.4 --wbits 2 --quant ldlq --pre_gptqH --pre_tff --qfn s --x_sigma 2.0 --pre_proj 
-
-# gptq
-python opt.py facebook/opt-125m c4 --exp_name opt_125m_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
-python opt.py facebook/opt-350m c4 --exp_name opt_350m_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
-python opt.py facebook/opt-1.3b c4 --exp_name opt_1p3b_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
-python opt.py facebook/opt-2.7b c4 --exp_name opt_2p7b_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
-python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
-
-# quip
-python opt.py facebook/opt-125m c4 --exp_name opt_125m_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
-python opt.py facebook/opt-350m c4 --exp_name opt_350m_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
-python opt.py facebook/opt-1.3b c4 --exp_name opt_1p3b_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
-python opt.py facebook/opt-2.7b c4 --exp_name opt_2p7b_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
-python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
+# 
+# # gptq
+# python opt.py facebook/opt-125m c4 --exp_name opt_125m_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
+# python opt.py facebook/opt-350m c4 --exp_name opt_350m_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
+# python opt.py facebook/opt-1.3b c4 --exp_name opt_1p3b_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
+# python opt.py facebook/opt-2.7b c4 --exp_name opt_2p7b_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
+# python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_gptq_2 --wbits 2 --quant gptq --pre_gptqH --qfn a 
+# 
+# # quip
+# python opt.py facebook/opt-125m c4 --exp_name opt_125m_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
+# python opt.py facebook/opt-350m c4 --exp_name opt_350m_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
+# python opt.py facebook/opt-1.3b c4 --exp_name opt_1p3b_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
+# python opt.py facebook/opt-2.7b c4 --exp_name opt_2p7b_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
+# python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
+#
+# quip 2 sigma
+python opt.py facebook/opt-125m c4 --exp_name opt_125m_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+python opt.py facebook/opt-350m c4 --exp_name opt_350m_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+python opt.py facebook/opt-1.3b c4 --exp_name opt_1p3b_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+python opt.py facebook/opt-2.7b c4 --exp_name opt_2p7b_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
 
 # # python llama.py /data/harsha/llama/hf_llama2/ c4 --eval --exp_name llama_fq_2p6 --tff_redundancy 1.3 --new_eval --wbits 2 --quant ldlq --pre_gptqH --pre_tff --qfn s --x_sigma 2.0 --pre_proj 
 
