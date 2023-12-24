@@ -755,7 +755,7 @@ if __name__ == '__main__':
             print(dataset)
             logging.info(dataset)
             ppl = llama_eval(model, testloader, DEV)
-            ppls.appen(ppl)
+            ppls.append(ppl)
     
         logging.info('------------------------------------------------------------------------')
         logging.info('------------------------------------------------------------------------')
