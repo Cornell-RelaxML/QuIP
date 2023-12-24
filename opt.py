@@ -672,7 +672,7 @@ if __name__ == '__main__':
         args.qfn         = 'b'
 
     results_dir = 'output_opt'
-    filename = f'{args.exp_name}.log'
+    filename = f'logs/{args.exp_name}.log'
     logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     if args.load:

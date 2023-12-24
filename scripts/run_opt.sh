@@ -57,11 +57,18 @@
 # python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_quip_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
 #
 # quip 2 sigma
-python opt.py facebook/opt-125m c4 --exp_name opt_125m_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
-python opt.py facebook/opt-350m c4 --exp_name opt_350m_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
-python opt.py facebook/opt-1.3b c4 --exp_name opt_1p3b_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
-python opt.py facebook/opt-2.7b c4 --exp_name opt_2p7b_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
-python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+# python opt.py facebook/opt-125m c4 --exp_name opt_125m_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+# python opt.py facebook/opt-350m c4 --exp_name opt_350m_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+# python opt.py facebook/opt-1.3b c4 --exp_name opt_1p3b_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+# python opt.py facebook/opt-2.7b c4 --exp_name opt_2p7b_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+# python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_quip2sig_2 --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn s --x_sigma 2.0 
+# 
+# # full precision
+python opt.py facebook/opt-125m c4 --exp_name opt_125m_fp16 --wbits 16 
+python opt.py facebook/opt-350m c4 --exp_name opt_350m_fp16 --wbits 16 
+python opt.py facebook/opt-1.3b c4 --exp_name opt_1p3b_fp16 --wbits 16 
+python opt.py facebook/opt-2.7b c4 --exp_name opt_2p7b_fp16 --wbits 16 
+python opt.py facebook/opt-6.7b c4 --exp_name opt_6p7b_fp16 --wbits 16 
 
 # # python llama.py /data/harsha/llama/hf_llama2/ c4 --eval --exp_name llama_fq_2p6 --tff_redundancy 1.3 --new_eval --wbits 2 --quant ldlq --pre_gptqH --pre_tff --qfn s --x_sigma 2.0 --pre_proj 
 
