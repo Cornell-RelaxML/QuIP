@@ -89,6 +89,9 @@ def llama_sequential(model, dataloader, dev, seed = 0):
         print('+==================+==============+============+===========+=======+')
 
         layer = layers[i].to(dev)
+
+        print(f' sent layer to dev')
+
         full = find_layers(layer)
         if args.true_sequential:
             sequential = [['self_attn.k_proj', 'self_attn.v_proj', 'self_attn.q_proj'], ['self_attn.o_proj'], ['mlp.up_proj', 'mlp.gate_proj'], ['mlp.down_proj']]
@@ -96,6 +99,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
             sequential = [list(full.keys())]
 
         for names in sequential:
+            print(f'layer[{i}].{name}')
             lin_count += 1
             subset = {n: full[n] for n in names}
             quant_method = {}
@@ -141,33 +145,35 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                         k_tff = round(u_n // l_tff * args.tff_redundancy)
                         logging.info(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {u_n = }')
                         print(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {u_n = }')
-                        tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
+                        tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2)
                     if v_n not in tffs:
                         l_tff = v_n // 16
                         k_tff = round(v_n // l_tff * args.tff_redundancy)
                         logging.info(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {v_n = }')
                         print(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {v_n = }')
-                        tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
-                    # g_u = torch.Generator() # use this to store the seed for later
-                    # g_u.manual_seed(seed + lin_count)
-                    # u_seed = g_u.initial_seed()
-                    # rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
-                    # Q_u, _ = torch.linalg.qr(rand_mat_u)
-                    # g_v = torch.Generator() # use this to store the seed for later
-                    # g_v.manual_seed(seed + lin_count)
-                    # v_seed = g_v.initial_seed()
-                    # rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
-                    # Q_v, _ = torch.linalg.qr(rand_mat_v)
-                    # tff_rand_seeds[f'quantized model.decoder.layers.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
-                    # quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T.to(dev)
-                    # quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T.to(dev)
+                        tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2)
+                    g_u = torch.Generator() # use this to store the seed for later
+                    g_u.manual_seed(seed + lin_count)
+                    u_seed = g_u.initial_seed()
+                    rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
+                    Q_u, _ = torch.linalg.qr(rand_mat_u)
+                    g_v = torch.Generator() # use this to store the seed for later
+                    g_v.manual_seed(seed + lin_count)
+                    v_seed = g_v.initial_seed()
+                    rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
+                    Q_v, _ = torch.linalg.qr(rand_mat_v)
+                    tff_rand_seeds[f'quantized model.decoder.layers.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
+                    quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T
+                    quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T
 
-                    U = rand_ortho_butterfly(u_n).to(torch.float32).to(dev)
-                    V = rand_ortho_butterfly(v_n).to(torch.float32).to(dev)
-                    quant_method[name].U = tffs[u_n].view(-1, u_n) @ U.T.to(dev)
-                    quant_method[name].V = tffs[v_n].view(-1, v_n) @ V.T.to(dev)
+                    # U = rand_ortho_butterfly(u_n).to(torch.float32)
+                    # V = rand_ortho_butterfly(v_n).to(torch.float32)
+                    # quant_method[name].U = tffs[u_n].view(-1, u_n) @ U.T
+                    # quant_method[name].V = tffs[v_n].view(-1, v_n) @ V.T
 
                 quant_method[name].name = name
+
+            print(f' before compute H')
 
             def add_batch(name):
 
@@ -187,16 +193,21 @@ def llama_sequential(model, dataloader, dev, seed = 0):
             for name in subset:
                 quant_method[name].post_batch()
 
+            print(f'H computation Done')
+
             for name in subset:
                 if quant_method[name].nsamples == 0:
                     print(f'{name} has nsamples = 0')
                     breakpoint()
                     continue
                 print(name)
+
+                print(f' layer i before preproc')
                 quant_method[name].preproc(
                                     preproc_gptqH=args.pre_gptqH, percdamp=args.percdamp,
                                     preproc_rescale=args.pre_rescale, 
                                     preproc_proj=args.pre_proj, preproc_proj_extra=args.pre_proj_extra)
+                print(f' layer i before fasterquant')
                 if args.quant == 'gptq':
                     quant_method[name].fasterquant(groupsize=args.groupsize)
                 elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
@@ -218,10 +229,18 @@ def llama_sequential(model, dataloader, dev, seed = 0):
         for j in range(args.nsamples):
             outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, position_ids=position_ids)[0]
 
+        
+        print('after layer i, its still in GPU')
+
         layers[i] = layer.cpu()
+
+        print('after layer i, its in CPU')
+
         del layer
         del quant_method
         torch.cuda.empty_cache()
+
+        print('after layer i, its deleted now')
 
         inps, outs = outs, inps
         print('+------------------+--------------+------------+-----------+-------+')

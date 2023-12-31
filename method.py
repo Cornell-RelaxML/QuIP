@@ -119,7 +119,7 @@ class QuantMethod:
             inp = inp.permute([1, 0, 2])
             inp = inp.flatten(1)
         self.nsamples += tmp
-        self.inps.append(inp)
+        self.inps.append(inp.cpu())
         inp = inp.to(torch.float64)
         self.H.add_(inp.matmul(inp.t()))
 
@@ -164,8 +164,8 @@ class QuantMethod:
             # 
             if hasattr(self, 'U'):
                 # we are doing the TFF based thing
-                U = self.U
-                V = self.V
+                U = self.U.to(w.device)
+                V = self.V.to(w.device)
             else:
                 if preproc_proj_extra == 0:
                     U = rand_ortho_butterfly(w.shape[0]).to(torch.float32).to(w.device)
