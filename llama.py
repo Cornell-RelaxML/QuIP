@@ -23,6 +23,9 @@ from tqdm import tqdm
 
 from utils.construct_tff import construct_real_tff
 import pickle as pkl
+from typing import List, Optional, Tuple, Union
+import warnings
+
 
 @torch.no_grad()
 def llama_sequential(model, dataloader, dev, seed = 0):
@@ -88,7 +91,84 @@ def llama_sequential(model, dataloader, dev, seed = 0):
         print('|       name       | weight_error | fp_inp_SNR | q_inp_SNR | time  |')
         print('+==================+==============+============+===========+=======+')
 
-        layer = layers[i].to(dev)
+        class dual_gpu_layer(nn.Module):
+            def __init__(self, module):
+                super().__init__()
+                self.module = module
+                # send attention to cuda 0, mlp to cuda 1
+                self.module.self_attn = self.module.self_attn.to('cuda:0')
+                self.module.input_layernorm = self.module.input_layernorm.to('cuda:0')
+
+                self.module.mlp = self.module.mlp.to('cuda:1')
+                self.module.post_attention_layernorm = self.module.post_attention_layernorm.to('cuda:1')
+
+            def forward(
+                self,
+                hidden_states: torch.Tensor,
+                attention_mask: Optional[torch.Tensor] = None,
+                position_ids: Optional[torch.LongTensor] = None,
+                past_key_value: Optional[Tuple[torch.Tensor]] = None,
+                output_attentions: Optional[bool] = False,
+                use_cache: Optional[bool] = False,
+                **kwargs,
+            ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+                """
+                Args:
+                    hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
+                    attention_mask (`torch.FloatTensor`, *optional*):
+                        attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
+                        query_sequence_length, key_sequence_length)` if default attention is used.
+                    output_attentions (`bool`, *optional*):
+                        Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+                        returned tensors for more detail.
+                    use_cache (`bool`, *optional*):
+                        If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
+                        (see `past_key_values`).
+                    past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
+                """
+                if "padding_mask" in kwargs:
+                    warnings.warn(
+                        "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
+                    )
+
+                # device 0
+                hidden_states = hidden_states.to('cuda:0')
+                residual = hidden_states
+
+                hidden_states = self.module.input_layernorm(hidden_states)
+
+                # Self Attention
+                hidden_states, self_attn_weights, present_key_value = self.module.self_attn(
+                    hidden_states=hidden_states,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    past_key_value=past_key_value,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                    **kwargs,
+                )
+                hidden_states = residual + hidden_states
+
+                # Fully Connected
+                # device 1
+                hidden_states = hidden_states.to('cuda:1')
+                residual = hidden_states
+                hidden_states = self.module.post_attention_layernorm(hidden_states)
+                hidden_states = self.module.mlp(hidden_states)
+                hidden_states = residual + hidden_states
+
+                outputs = (hidden_states,)
+
+                if output_attentions:
+                    outputs += (self_attn_weights,)
+
+                if use_cache:
+                    outputs += (present_key_value,)
+
+                return outputs
+
+
+        layer = dual_gpu_layer(layers[i])
 
         print(f' sent layer to dev')
 
@@ -99,7 +179,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
             sequential = [list(full.keys())]
 
         for names in sequential:
-            print(f'layer[{i}].{name}')
+            print(f'layer[{i}].{names}')
             lin_count += 1
             subset = {n: full[n] for n in names}
             quant_method = {}
@@ -232,7 +312,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
         
         print('after layer i, its still in GPU')
 
-        layers[i] = layer.cpu()
+        layers[i] = layer.module.cpu()
 
         print('after layer i, its in CPU')
 

@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 from utils.construct_tff import construct_real_tff
 import logging
+from typing import List, Optional, Tuple, Union
 
 def get_opt(model):
     import torch
@@ -100,9 +101,106 @@ def opt_sequential(model, dataloader, dev, args):
     Wiener_params = {}
     errors, Hmags, times = [], [], []
     for i in tqdm(range(len(layers))):
-        layer = layers[i].to(dev)
+
+        class dual_gpu_layer(nn.Module):
+            def __init__(self, module):
+                super().__init__()
+                self.module = module
+                # send attention to cuda 0, mlp to cuda 1
+                self.module.self_attn               = self.module.self_attn.to('cuda:0')
+                self.module.self_attn_layer_norm    = self.module.self_attn_layer_norm.to('cuda:0')
+
+                self.module.activation_fn = self.module.activation_fn.to('cuda:1')
+                self.module.fc1 = self.module.fc1.to('cuda:1')
+                self.module.fc2 = self.module.fc2.to('cuda:1')
+                self.module.final_layer_norm = self.module.final_layer_norm.to('cuda:1')
+
+            def forward(
+                self,
+                hidden_states: torch.Tensor,
+                attention_mask: Optional[torch.Tensor] = None,
+                layer_head_mask: Optional[torch.Tensor] = None,
+                past_key_value: Optional[Tuple[torch.Tensor]] = None,
+                output_attentions: Optional[bool] = False,
+                use_cache: Optional[bool] = False,
+            ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+                """
+                Args:
+                    hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
+                    attention_mask (`torch.FloatTensor`, *optional*): attention mask of size
+                        `(batch, 1, tgt_len, src_len)` where padding elements are indicated by very large negative values.
+                    layer_head_mask (`torch.FloatTensor`, *optional*): mask for attention heads in a given layer of size
+                        `(encoder_attention_heads,)`.
+                    output_attentions (`bool`, *optional*):
+                        Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+                        returned tensors for more detail.
+                    use_cache (`bool`, *optional*):
+                        If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
+                        (see `past_key_values`).
+                    past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
+                """
+
+                # Device 0
+                hidden_states = hidden_states.to('cuda:0')
+                residual = hidden_states
+
+                # 125m, 1.7B, ..., 175B applies layer norm BEFORE attention
+                if self.module.do_layer_norm_before:
+                    hidden_states = self.module.self_attn_layer_norm(hidden_states)
+
+                # Self Attention
+                hidden_states, self_attn_weights, present_key_value = self.module.self_attn(
+                    hidden_states=hidden_states,
+                    past_key_value=past_key_value,
+                    attention_mask=attention_mask,
+                    layer_head_mask=layer_head_mask,
+                    output_attentions=output_attentions,
+                )
+                hidden_states = nn.functional.dropout(hidden_states, p=self.module.dropout, training=self.module.training)
+                hidden_states = residual + hidden_states
+
+                # 350m applies layer norm AFTER attention
+                if not self.module.do_layer_norm_before:
+                    hidden_states = self.module.self_attn_layer_norm(hidden_states)
+
+                # Device 1
+                # Fully Connected
+                hidden_states = hidden_states.to('cuda:1')
+                hidden_states_shape = hidden_states.shape
+                hidden_states = hidden_states.reshape(-1, hidden_states.size(-1))
+                residual = hidden_states
+
+                # 125m, 1.7B, ..., 175B applies layer norm BEFORE attention
+                if self.module.do_layer_norm_before:
+                    hidden_states = self.module.final_layer_norm(hidden_states)
+
+                hidden_states = self.module.fc1(hidden_states)
+                hidden_states = self.module.activation_fn(hidden_states)
+
+                hidden_states = self.module.fc2(hidden_states)
+                hidden_states = nn.functional.dropout(hidden_states, p=self.module.dropout, training=self.module.training)
+
+                hidden_states = (residual + hidden_states).view(hidden_states_shape)
+
+                # 350m applies layer norm AFTER attention
+                if not self.module.do_layer_norm_before:
+                    hidden_states = self.module.final_layer_norm(hidden_states)
+
+                outputs = (hidden_states,)
+
+                if output_attentions:
+                    outputs += (self_attn_weights,)
+
+                if use_cache:
+                    outputs += (present_key_value,)
+
+                return outputs
+
+
+        layer = dual_gpu_layer(layers[i])
 
         subset = find_layers(layer)
+        breakpoint()
         quant_method = {}
         # Initialize Quant Method and Compute H
         for name in subset:
@@ -147,13 +245,13 @@ def opt_sequential(model, dataloader, dev, args):
                     k_tff = round(u_n // l_tff * args.tff_redundancy)
                     logging.info(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {u_n = }')
                     print(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {u_n = }')
-                    tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2).to(dev)
+                    tffs[u_n] = construct_real_tff(k_tff, l_tff // 2, u_n // 2)
                 if v_n not in tffs:
                     l_tff = v_n // 16
                     k_tff = round(v_n // l_tff * args.tff_redundancy)
                     logging.info(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {v_n = }')
                     print(f'layer {i}: {name}, red = {args.tff_redundancy}, {k_tff = }, {l_tff = }, {v_n = }')
-                    tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
+                    tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2)
                 g_u = torch.Generator() # use this to store the seed for later
                 u_seed = g_u.seed()
                 rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
@@ -163,8 +261,8 @@ def opt_sequential(model, dataloader, dev, args):
                 rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
                 Q_v, _ = torch.linalg.qr(rand_mat_v)
                 tff_rand_seeds[f'quantized model.decoder.layers.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
-                quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T.to(dev)
-                quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T.to(dev)
+                quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T
+                quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T
 
             quant_method[name].name = name
 
@@ -202,7 +300,7 @@ def opt_sequential(model, dataloader, dev, args):
             elif args.quant == 'nearest':
                 quant_method[name].fasterquant()
             quantizers['model.decoder.layers.%d.%s' %
-                        (i, name)] = quant_method[name].quantizer
+                        (i, name)] = quant_method[name].quantizer.to('cpu')
 
             errors.append(quant_method[name].error)
             times.append(quant_method[name].time)
@@ -213,7 +311,7 @@ def opt_sequential(model, dataloader, dev, args):
             outs[j] = layer(inps[j].unsqueeze(0),
                             attention_mask=attention_mask)[0]
 
-        layers[i] = layer.cpu()
+        layers[i] = layer.module.cpu()
         del layer
         del quant_method
         torch.cuda.empty_cache()
