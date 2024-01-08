@@ -536,7 +536,7 @@ def quantize_weight_vecbal(w,
         # scale = scale * 0.75 # this works for the birds dataset
         # breakpoint()
         wr = torch.clamp((w/scale) + zero, 0, maxq)
-        clamped_projs = (wr - zero) * scale
+        clamped_projs = ( (wr - zero) * scale ).cpu()
         wr = round_vecbal_Hsort(
             wr, H, nbits, npasses, unbiased=unbiased, qmethod=qmethod, 
             lazy_batch=lazy_batch)

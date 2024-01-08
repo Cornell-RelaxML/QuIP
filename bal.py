@@ -33,7 +33,7 @@ class Balance(QuantMethod):
         self.layer.weight.data = self.layer.weight.data.cpu()
         self.H = self.H.cpu()
 
-        quant_w, clamped_proj = quantize_weight_vecbal(
+        w, clamped_proj = quantize_weight_vecbal(
             w=w, H=H,
             nbits=self.nbits,
             npasses=self.npasses,
@@ -45,7 +45,7 @@ class Balance(QuantMethod):
             qmethod=self.qmethod,
             lazy_batch=lazy_batch
         )
-        self.layer.weight.data = quant_w.to(self.dtype)
+        self.layer.weight.data = w.to(self.dtype)
         # self.error_compute(w, quant_w)
         self.error = 1.0
         self.Hmag = 1.0

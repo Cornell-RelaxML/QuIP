@@ -26,6 +26,8 @@ import pickle as pkl
 from typing import List, Optional, Tuple, Union
 import warnings
 
+import subprocess
+
 
 @torch.no_grad()
 def llama_sequential(model, dataloader, dev, seed = 0):
@@ -100,7 +102,6 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                 self.module.input_layernorm = self.module.input_layernorm.to('cuda:0')
 
                 self.module.mlp = self.module.mlp.to('cuda:1')
-                self.module.mlp.down_proj = self.module.mlp.down_proj.to('cuda:2')
                 self.module.post_attention_layernorm = self.module.post_attention_layernorm.to('cuda:1')
 
             def forward(
@@ -155,14 +156,8 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                 hidden_states = hidden_states.to('cuda:1')
                 residual = hidden_states
                 hidden_states = self.module.post_attention_layernorm(hidden_states)
-                # hidden_states = self.module.mlp(hidden_states)
-                hidden_states = self.module.mlp.act_fn(self.module.mlp.gate_proj(hidden_states)) * self.module.mlp.up_proj(hidden_states)
-                
-                # device 2
-                hidden_states = hidden_states.to('cuda:2')
-                hidden_states = self.module.mlp.down_proj(hidden_states)
-
-                hidden_states = residual + hidden_states.to('cuda:1')
+                hidden_states = self.module.mlp(hidden_states)
+                hidden_states = residual + hidden_states
 
                 outputs = (hidden_states,)
 
@@ -178,6 +173,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
         layer = dual_gpu_layer(layers[i])
 
         print(f' sent layer to dev')
+        logging.info(f' sent layer to dev')
 
         full = find_layers(layer)
         if args.true_sequential:
@@ -187,6 +183,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
 
         for names in sequential:
             print(f'layer[{i}].{names}')
+            logging.info(f'layer[{i}].{names}')
             lin_count += 1
             subset = {n: full[n] for n in names}
             quant_method = {}
@@ -261,6 +258,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                 quant_method[name].name = name
 
             print(f' before compute H')
+            logging.info(f' before compute H')
 
             def add_batch(name):
 
@@ -281,6 +279,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                 quant_method[name].post_batch()
 
             print(f'H computation Done')
+            logging.info(f'H computation Done')
 
             for name in subset:
                 if quant_method[name].nsamples == 0:
@@ -288,13 +287,19 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                     breakpoint()
                     continue
                 print(name)
+                logging.info(name)
 
                 print(f' layer i before preproc')
+                logging.info(f' layer i before preproc')
+                command = "nvidia-smi --query-gpu=index,utilization.memory,memory.total,memory.used --format=csv --id=6,7"
                 quant_method[name].preproc(
                                     preproc_gptqH=args.pre_gptqH, percdamp=args.percdamp,
                                     preproc_rescale=args.pre_rescale, 
                                     preproc_proj=args.pre_proj, preproc_proj_extra=args.pre_proj_extra)
                 print(f' layer i before fasterquant')
+                logging.info(f' layer i before fasterquant')
+                coutput = subprocess.check_output(command, shell=True, text=True)
+                logging.info(coutput)
                 if args.quant == 'gptq':
                     quant_method[name].fasterquant(groupsize=args.groupsize)
                 elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
@@ -304,6 +309,10 @@ def llama_sequential(model, dataloader, dev, seed = 0):
 
                 # quantizers['model.layers.%d.%s' % (i, name)] = (gptq[name].quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), args.wbits, args.groupsize)
                 quantizers['model.layers.%d.%s' % (i, name)] = quant_method[name].quantizer.cpu()
+
+                logging.info(f'layer i after fasterquant')
+                coutput = subprocess.check_output(command, shell=True, text=True)
+                logging.info(coutput)
 
                 if args.observe:
                     observer.submit(name=name, layerid=i, gptq=gptq[name], error=error)
@@ -318,20 +327,25 @@ def llama_sequential(model, dataloader, dev, seed = 0):
 
         
         print('after layer i, its still in GPU')
+        logging.info('after layer i, its still in GPU')
 
         layers[i] = layer.module.cpu()
 
         print('after layer i, its in CPU')
+        logging.info('after layer i, its in CPU')
 
         del layer
         del quant_method
         torch.cuda.empty_cache()
 
         print('after layer i, its deleted now')
+        logging.info('after layer i, its deleted now')
 
         inps, outs = outs, inps
         print('+------------------+--------------+------------+-----------+-------+')
         print('\n')
+        logging.info('+------------------+--------------+------------+-----------+-------+')
+        logging.info('\n')
 
     if args.observe:
         observer.print()
@@ -814,7 +828,7 @@ if __name__ == '__main__':
     # seed the experiment 
     set_seed(args)
     # torch.use_deterministic_algorithms(True)
-    filename = f'{args.exp_name}.log'
+    filename = f'logs/{args.exp_name}.log'
     logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     # results_dir = 'output_sigma'
