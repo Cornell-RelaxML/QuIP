@@ -100,6 +100,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                 self.module.input_layernorm = self.module.input_layernorm.to('cuda:0')
 
                 self.module.mlp = self.module.mlp.to('cuda:1')
+                self.module.mlp.down_proj = self.module.mlp.down_proj.to('cuda:2')
                 self.module.post_attention_layernorm = self.module.post_attention_layernorm.to('cuda:1')
 
             def forward(
@@ -154,8 +155,14 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                 hidden_states = hidden_states.to('cuda:1')
                 residual = hidden_states
                 hidden_states = self.module.post_attention_layernorm(hidden_states)
-                hidden_states = self.module.mlp(hidden_states)
-                hidden_states = residual + hidden_states
+                # hidden_states = self.module.mlp(hidden_states)
+                hidden_states = self.module.mlp.act_fn(self.module.mlp.gate_proj(hidden_states)) * self.module.mlp.up_proj(hidden_states)
+                
+                # device 2
+                hidden_states = hidden_states.to('cuda:2')
+                hidden_states = self.module.mlp.down_proj(hidden_states)
+
+                hidden_states = residual + hidden_states.to('cuda:1')
 
                 outputs = (hidden_states,)
 

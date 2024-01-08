@@ -207,22 +207,22 @@ class QuantMethod:
         assert self.preproc_done is True
         if self.preproc_proj:
             w = self.layer.weight.data.clone().to(torch.float32)
-            H = self.H.data.clone().to(torch.float32)
+            # H = self.H.data.clone().to(torch.float32)
             U = self.projU.to(w.device)
             V = self.projV.to(w.device)
             w = (U.T @ w @ V)
-            H = (V.T @ H @ V)
+            # H = (V.T @ H @ V)
             self.layer.weight.data = w.to(self.layer.weight.data.dtype)
-            self.H.data = H.to(self.H.data.dtype)
+            # self.H.data = H.to(self.H.data.dtype)
         if self.preproc_rescale:
             w = self.layer.weight.data.clone()
-            H = self.H.data.clone()
+            # H = self.H.data.clone()
             scaleWH = self.scaleWH.to(w.device)
             w = w / scaleWH[None,:]
-            H = H * scaleWH[:,None]
-            H = H * scaleWH[None,:]
+            # H = H * scaleWH[:,None]
+            # H = H * scaleWH[None,:]
             self.layer.weight.data = w.to(self.layer.weight.data.dtype)
-            self.H.data = H.to(self.H.data.dtype)
+            # self.H.data = H.to(self.H.data.dtype)
 
     def apply_weiner_filter(self, clean_W, Wien_res_rank):
         self.inps = torch.stack(self.inps, dim=0).permute(0,2,1)

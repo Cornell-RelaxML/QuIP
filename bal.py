@@ -29,6 +29,10 @@ class Balance(QuantMethod):
             self.quantizer.find_params(w, weight=True)
         H = self.H.data.clone()
 
+        # taking layer.weight and H off the GPU
+        self.layer.weight.data = self.layer.weight.data.cpu()
+        self.H = self.H.cpu()
+
         quant_w, clamped_proj = quantize_weight_vecbal(
             w=w, H=H,
             nbits=self.nbits,
@@ -42,7 +46,9 @@ class Balance(QuantMethod):
             lazy_batch=lazy_batch
         )
         self.layer.weight.data = quant_w.to(self.dtype)
-        self.error_compute(w, quant_w)
+        # self.error_compute(w, quant_w)
+        self.error = 1.0
+        self.Hmag = 1.0
         self.postproc()
         # print('time %.2f' % (time.time() - tick))
         self.time = time.time() - tick

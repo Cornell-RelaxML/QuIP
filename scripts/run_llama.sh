@@ -28,11 +28,11 @@ python llama.py /data/harsha/llama/hf_llama2_70b/ c4 --eval --exp_name llama2_70
 python llama.py /data/harsha/llama/hf_llama2_70b/ c4 --eval --exp_name llama2_70B_fq_2p8 --tff_redundancy 1.4 --new_eval --wbits 2 --quant ldlq --pre_gptqH --pre_tff --qfn s --x_sigma 2.0 --pre_proj 
 # 
 ### gptq
-# python llama.py /data/harsha/llama/hf_llama2/ c4 --eval --exp_name llama_gptq_2 --new_eval --wbits 2 --quant gptq --pre_gptqH --qfn a 
+# python llama.py /data/harsha/llama/hf_llama2_70b/ c4 --eval --exp_name llama2_70B_gptq_2 --new_eval --wbits 2 --quant gptq --pre_gptqH --qfn a 
 # # 
 ### quip
-# python llama.py /data/harsha/llama/hf_llama2/ c4 --eval --exp_name llama_quip_2 --new_eval --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
+# python llama.py /data/harsha/llama/hf_llama2_70b/ c4 --eval --exp_name llama2_70B_quip_2 --new_eval --wbits 2 --quant ldlq --pre_gptqH --pre_proj --qfn b 
 # # 
 ### full precision
-# python llama.py /data/harsha/llama/hf_llama2/ c4 --eval --exp_name llama_fp16 --new_eval --wbits 16
+# python llama.py /data/harsha/llama/hf_llama2_70b/ c4 --eval --exp_name llama2_70B_fp16 --new_eval --wbits 16
 

@@ -124,21 +124,6 @@ def opt_sequential(model, dataloader, dev, args):
                 output_attentions: Optional[bool] = False,
                 use_cache: Optional[bool] = False,
             ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-                """
-                Args:
-                    hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
-                    attention_mask (`torch.FloatTensor`, *optional*): attention mask of size
-                        `(batch, 1, tgt_len, src_len)` where padding elements are indicated by very large negative values.
-                    layer_head_mask (`torch.FloatTensor`, *optional*): mask for attention heads in a given layer of size
-                        `(encoder_attention_heads,)`.
-                    output_attentions (`bool`, *optional*):
-                        Whether or not to return the attentions tensors of all attention layers. See `attentions` under
-                        returned tensors for more detail.
-                    use_cache (`bool`, *optional*):
-                        If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
-                        (see `past_key_values`).
-                    past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
-                """
 
                 # Device 0
                 hidden_states = hidden_states.to('cuda:0')
