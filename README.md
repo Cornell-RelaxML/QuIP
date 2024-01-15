@@ -10,6 +10,10 @@ The code is built on top of [OPTQ's repository](https://github.com/IST-DASLab/gp
 
 ## Update: [QuIP#](https://github.com/Cornell-RelaxML/quip-sharp) is our new and improved method! Includes a lattice codebook and an efficient cuda implementation! Results on quantizing Llama 1 and 2 models, achieving near fp16 quantization performance at 2 bits. 
 
+### Llama-2 Update
+Replace `opt.py` with `llama.py` to quantize and evaluate the Llama-2 class of models with QuIP. 
+Note that we currently evaluate this model with 2048 context length, but this can be changed by modifying `model.seqlen`.
+
 ## Language Generation
 
 ```
@@ -49,7 +53,7 @@ To evaluate the quantized models on zeroshot tasks, simply provide the saved qua
 Evaluated tasks are {arc_easy, lambada, piqa, storycloze}.
 
 ## Benchmarking
-Soon to come!
+Please see our new project QuIP#.
 
 
 ## OPTQ and LDLQ Equivalence
