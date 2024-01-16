@@ -6,6 +6,7 @@ from functools import partial
 import sys
 
 def check_nbits(wr, nbits):
+    breakpoint()
     (wr_vals, wr_counts) = torch.unique(wr, sorted=True, return_counts=True)
     if (len(wr_vals) > 2**nbits):
         breakpoint()
@@ -508,6 +509,11 @@ def quantize_weight_vecbal(w,
                             qmethod='bitbal',
                             lazy_batch=False,
                             ):
+
+    import os 
+    if os.environ['BKTPT'] == 'True':
+        breakpoint()
+
     if (qfn == 'a') and (qmethod == 'ldl_gptqequiv'):
         wr = round_ldl_gptqequiv((w/scale) + zero, H, nbits=nbits)
         return scale * (wr - zero), None

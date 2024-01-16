@@ -291,7 +291,14 @@ def llama_sequential(model, dataloader, dev, seed = 0):
 
                 print(f' layer i before preproc')
                 logging.info(f' layer i before preproc')
-                command = "nvidia-smi --query-gpu=index,utilization.memory,memory.total,memory.used --format=csv --id=6,7"
+                command = "nvidia-smi --query-gpu=index,utilization.memory,memory.total,memory.used --format=csv --id=0,1"
+
+                if i == 8 and 'down' in name:
+                    os.environ['BKTPT'] = 'True'
+                    breakpoint()
+                else: 
+                    os.environ['BKTPT'] = 'False'
+
                 quant_method[name].preproc(
                                     preproc_gptqH=args.pre_gptqH, percdamp=args.percdamp,
                                     preproc_rescale=args.pre_rescale, 
@@ -812,6 +819,9 @@ if __name__ == '__main__':
     parser.add_argument('--quant-directory', type=str, default=None, help='Specify the directory for export quantization parameters to toml format. `None` means no export by default.')
 
     args = parser.parse_args()
+
+    import os
+    os.environ['BKTPT'] = 'False'
 
     # Setup CUDA, GPU & distributed training
     if args.local_rank == -1:
