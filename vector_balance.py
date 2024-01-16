@@ -6,7 +6,8 @@ from functools import partial
 import sys
 
 def check_nbits(wr, nbits):
-    breakpoint()
+    if torch.any(torch.isnan(wr)):
+        breakpoint()
     (wr_vals, wr_counts) = torch.unique(wr, sorted=True, return_counts=True)
     if (len(wr_vals) > 2**nbits):
         breakpoint()
