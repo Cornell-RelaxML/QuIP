@@ -5,6 +5,7 @@ output_new/
 output*/
 hf_llama2/
 hf_llama2_70b/
+LICENSE
 
 
 # temp files
@@ -18,3 +19,4 @@ hf_llama2_70b/
 *.pdf
 *.mat
 *.swp
+*.md

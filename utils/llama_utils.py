@@ -23,7 +23,8 @@ def get_wikitext2(nsamples, seed, seqlen, model):
     import random
     random.seed(seed)
     trainloader = []
-    for _ in range(nsamples):
+    for _i in range(nsamples):
+        print(_i)
         i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
         j = i + seqlen
         inp = trainenc.input_ids[:, i:j]
@@ -49,7 +50,8 @@ def get_ptb(nsamples, seed, seqlen, model):
     import random
     random.seed(seed)
     trainloader = []
-    for _ in range(nsamples):
+    for _i in range(nsamples):
+        print(_i)
         i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
         j = i + seqlen
         inp = trainenc.input_ids[:, i:j]
@@ -78,9 +80,10 @@ def get_c4(nsamples, seed, seqlen, model):
     import random
     random.seed(seed)
     trainloader = []
-    for _ in range(nsamples):
+    for _i in range(nsamples):
+        print(_i)
         while True:
-            trainenc = tokenizer(next(train_iter)['text'], return_tensors='pt')
+            trainenc = tokenizer(next(iter(train_iter))['text'], return_tensors='pt')
             if trainenc.input_ids.shape[1] >= seqlen:
                 break
         i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
@@ -93,7 +96,8 @@ def get_c4(nsamples, seed, seqlen, model):
     import random
     random.seed(0)
     valenc = []
-    for _ in range(256):
+    for _i in range(256):
+        print(_i)
         while True:
             tmp = tokenizer(next(val_iter)['text'], return_tensors='pt')
             if tmp.input_ids.shape[1] >= seqlen:
@@ -180,7 +184,8 @@ def get_ptb_new(nsamples, seed, seqlen, model):
     import random
     random.seed(seed)
     trainloader = []
-    for _ in range(nsamples):
+    for _i in range(nsamples):
+        print(_i)
         i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
         j = i + seqlen
         inp = trainenc.input_ids[:, i:j]
@@ -207,9 +212,11 @@ def get_c4_new(nsamples, seed, seqlen, model):
     import random
     random.seed(seed)
     trainloader = []
-    for _ in range(nsamples):
+    for _i in range(nsamples):
+        print(_i)
+        breakpoint()
         while True:
-            trainenc = tokenizer(next(traindata)['text'], return_tensors='pt')
+            trainenc = tokenizer(next(iter(traindata))['text'], return_tensors='pt')
             if trainenc.input_ids.shape[1] >= seqlen:
                 break
         i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
@@ -222,7 +229,8 @@ def get_c4_new(nsamples, seed, seqlen, model):
     # we are not shuffling here
     val_iter = iter(valds)
     val_strings = []
-    for _ in range(1100):
+    for _i in range(1100):
+        print(_i)
         val_strings.append(next(val_iter)['text'])
     valenc = tokenizer(' '.join(val_strings), return_tensors='pt')
     valenc = valenc.input_ids[:, :(256 * seqlen)]

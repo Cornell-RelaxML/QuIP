@@ -61,17 +61,22 @@ def get_ptb(nsamples, seed, seqlen, model):
 
 
 def get_c4(nsamples, seed, seqlen, model):
+    # do not use this!!!!
+    # use the one in utils/llama_utils.py
+    return 
     from datasets import load_dataset
-    traindata = load_dataset(
-        'allenai/c4',
-        'allenai--c4',
-        data_files={'train': 'en/c4-train.00000-of-01024.json.gz'},
-        split='train')
-    valdata = load_dataset(
-        'allenai/c4',
-        'allenai--c4',
-        data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'},
-        split='validation')
+    traindata = load_dataset('c4', 'en', split='train', streaming=True)
+    valdata = load_dataset('c4', 'en', split='validation', streaming=True)
+    # traindata = load_dataset(
+    #     'allenai/c4',
+    #     'allenai--c4',
+    #     data_files={'train': 'en/c4-train.00000-of-01024.json.gz'},
+    #     split='train')
+    # valdata = load_dataset(
+    #     'allenai/c4',
+    #     'allenai--c4',
+    #     data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'},
+    #     split='validation')
 
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
@@ -177,8 +182,6 @@ def get_c4_new(nsamples, seed, seqlen, model):
     valenc = TokenizerWrapper(valenc)
 
     return trainloader, valenc
-
-
 
 
 def get_loaders(name, nsamples=128, seed=0, seqlen=2048, model=''):

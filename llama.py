@@ -293,11 +293,11 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                 logging.info(f' layer i before preproc')
                 command = "nvidia-smi --query-gpu=index,utilization.memory,memory.total,memory.used --format=csv --id=0,1"
 
-                if i == 8 and 'down' in name:
-                    os.environ['BKTPT'] = 'True'
-                    breakpoint()
-                else: 
-                    os.environ['BKTPT'] = 'False'
+                # if i == 8 and 'down' in name:
+                #     os.environ['BKTPT'] = 'True'
+                #     breakpoint()
+                # else: 
+                #     os.environ['BKTPT'] = 'False'
 
                 quant_method[name].preproc(
                                     preproc_gptqH=args.pre_gptqH, percdamp=args.percdamp,
@@ -821,7 +821,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     import os
-    os.environ['BKTPT'] = 'False'
+    # os.environ['BKTPT'] = 'False'
 
     # Setup CUDA, GPU & distributed training
     if args.local_rank == -1:
@@ -875,12 +875,30 @@ if __name__ == '__main__':
             input_ids = next(iter(dataloader))[0][:, :args.benchmark]
             benchmark(model, input_ids, check=args.check)
 
+    if args.exp_name != 'debug_thread':
+        #     opt_pack3(model, quantizers)
+        # save the model
+        write_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}')
+        os.makedirs(write_path, exist_ok=True)
+        model_dir = os.path.join(write_path, args.exp_name)
+        os.makedirs(model_dir, exist_ok=True)
+        torch.save(model.state_dict(), os.path.join(model_dir, 'Qmodel.pth'))
+        
+        try:
+            mdict = {   'quantizers': quantizers,
+                    }
+            torch.save(mdict, os.path.join(model_dir, 'Qparams.pth'))
+        except:
+            pass
+
     if args.eval:
+        print(f'evaluating')
         ppls = []
         datasets = ['wikitext2', 'ptb', 'c4']
         if args.new_eval:
-            datasets = ['wikitext2', 'ptb-new', 'c4-new']
+            datasets = ['c4-new', 'wikitext2', 'ptb-new']
         for dataset in datasets:
+            print(dataset)
             dataloader, testloader = get_loaders(dataset, seed=args.seed, model=args.model, seqlen=model.seqlen)
             print(dataset)
             logging.info(dataset)
@@ -893,8 +911,6 @@ if __name__ == '__main__':
         import csv
         import os
         results  = [args.exp_name, args.tff_redundancy, ppls[0], ppls[1], ppls[2]]
-        write_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}')
-        os.makedirs(write_path, exist_ok=True)
         csv_file_path = os.path.join(write_path,'results.csv')
         with open(csv_file_path, mode='a', newline='') as handle:
             writer = csv.writer(handle)

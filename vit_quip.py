@@ -131,6 +131,7 @@ def quantize_vit(model, train_batch, dev, args):
             inps.append(inp)
             raise ValueError
 
+    breakpoint()
     layers[0] = Catcher(layers[0])
     try:
         model(train_batch[0].to(dev))
@@ -150,6 +151,7 @@ def quantize_vit(model, train_batch, dev, args):
     quantized_weights = {}
     Wiener_params = {}
     errors, Hmags, times = [], [], []
+    lin_count = 0
     for i in tqdm(range(len(layers))):
         layer = layers[i].to(dev)
 
@@ -157,6 +159,7 @@ def quantize_vit(model, train_batch, dev, args):
         quant_method = {}
         # Initialize Quant Method and Compute H
         for name in subset:
+            lin_count += 1
             if args.quant == 'gptq':
                 quant_method[name] = GPTQ(subset[name])
                 quant_method[name].quantizer = Quantizer()
@@ -176,7 +179,7 @@ def quantize_vit(model, train_batch, dev, args):
                                                mse=False,
                                                x_sigma = args.x_sigma)
             elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
-                quant_method[name] = Balance(subset[name])
+                quant_method[name] = Balance(subset[name], no_pl=args.no_pl)
                 quant_method[name].configure(
                                     args.quant,
                                     args.wbits, 
@@ -200,15 +203,18 @@ def quantize_vit(model, train_batch, dev, args):
                     k_tff = int(v_n // l_tff * args.tff_redundancy)
                     tffs[v_n] = construct_real_tff(k_tff, l_tff // 2, v_n // 2).to(dev)
                 g_u = torch.Generator() # use this to store the seed for later
+                g_u.manual_seed(args.seed + lin_count)
                 u_seed = g_u.seed()
                 rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
                 Q_u, _ = torch.linalg.qr(rand_mat_u)
                 g_v = torch.Generator() # use this to store the seed for later
+                g_v.manual_seed(args.seed + lin_count+1)
                 v_seed = g_v.seed()
                 rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
                 Q_v, _ = torch.linalg.qr(rand_mat_v)
                 tff_rand_seeds[f'quantized model.decoder.layers.{i}.{name}'] = {'u_seed': u_seed, 'v_seed':v_seed}
                 quant_method[name].U = tffs[u_n].view(-1, u_n) @ Q_u.T.to(dev)
+                # quant_method[name].U = torch.eye(u_n).to(dev)
                 quant_method[name].V = tffs[v_n].view(-1, v_n) @ Q_v.T.to(dev)
 
             quant_method[name].name = name
@@ -428,6 +434,8 @@ if __name__ == '__main__':
                         help="name of the model to be loaded from timm")
     parser.add_argument('--x_sigma', type=float, default=2,
                         help="x times sigma for symm scale")
+    parser.add_argument('--no_pl', action='store_true', 
+                        help='remove P_l term in the weights transform for FrameQuant')
 
     parser.add_argument(
         '--percdamp',
@@ -530,7 +538,8 @@ if __name__ == '__main__':
     exp_name = args.exp_name # 'mlp_attn_quant_weiner_full'
     # results_dir = 'output_new'
     # results_dir = 'output_calib_data'
-    results_dir = 'output_sigma'
+    # results_dir = 'output_sigma'
+    results_dir = '/data/harsha/storage/framequant/output_vit'
     if exp_name != 'debug_thread':
         if args.save_path is None:
             current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -638,7 +647,7 @@ if __name__ == '__main__':
     # if args.load:
     #     exit()
 
-    if exp_name != 'debug_thread':
+    if exp_name != 'debug_thread' and args.save:
     #     opt_pack3(model, quantizers)
         # save the model
         torch.save(model.state_dict(), os.path.join(directory_path, 'Qmodel.pth'))

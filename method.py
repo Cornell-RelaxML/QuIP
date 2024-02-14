@@ -81,7 +81,7 @@ class QuantMethod:
     '''
     Base class for quantization methods
     '''
-    def __init__(self, layer, observe=False):
+    def __init__(self, layer, observe=False, no_pl=False):
         self.layer = layer
         self.dev = self.layer.weight.device
         W = layer.weight.data.clone()
@@ -97,6 +97,7 @@ class QuantMethod:
         self.inps = []
         self.observe = observe
         self.dtype = layer.weight.dtype
+        self.no_pl = no_pl
 
     def add_batch(self, inp, out):
         if DEBUG:
@@ -181,7 +182,10 @@ class QuantMethod:
             #H = H.to(torch.float32)
             H = H * (H.shape[0] / (torch.trace(H) + 1e-8)) + 1e-2 * torch.eye(H.shape[0], device=w.device)
             H = H.to(torch.float32)
-            w = U @ w @ V.T
+            if self.no_pl:
+                w = w @ V.T
+            else:
+                w = U @ w @ V.T
             H = V @ H @ V.T
             self.projU = U.cpu()
             self.projV = V.cpu()
@@ -210,7 +214,10 @@ class QuantMethod:
             # H = self.H.data.clone().to(torch.float32)
             U = self.projU.to(w.device)
             V = self.projV.to(w.device)
-            w = (U.T @ w @ V)
+            if self.no_pl:
+                w = (w @ V)
+            else:
+                w = (U.T @ w @ V)
             # H = (V.T @ H @ V)
             self.layer.weight.data = w.to(self.layer.weight.data.dtype)
             # self.H.data = H.to(self.H.data.dtype)

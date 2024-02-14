@@ -21,8 +21,8 @@ class Balance(QuantMethod):
     def fasterquant(self, lazy_batch=False):
 
         import os 
-        if os.environ['BKTPT'] == 'True':
-            breakpoint()
+        # if os.environ['BKTPT'] == 'True':
+        #     breakpoint()
 
         w = self.layer.weight.data.clone()
         if isinstance(self.layer, nn.Conv2d):

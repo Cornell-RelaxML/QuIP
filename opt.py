@@ -15,6 +15,8 @@ from utils.construct_tff import construct_real_tff
 import logging
 from typing import List, Optional, Tuple, Union
 
+import os
+
 def get_opt(model):
     import torch
 
@@ -610,7 +612,8 @@ def benchmark(model, input_ids, check=False):
 
 if __name__ == '__main__':
     import argparse
-    from datautils import *
+    # from datautils import *
+    from utils.llama_utils import get_loaders
 
     parser = argparse.ArgumentParser()
 
@@ -754,8 +757,11 @@ if __name__ == '__main__':
         args.proj_extra  = 1
         args.qfn         = 'b'
 
-    results_dir = 'output_opt'
-    filename = f'logs/{args.exp_name}.log'
+    # results_dir = 'output_opt'
+    results_dir = '/nobackup/harsha/storage/framequant/output_opt'
+    log_dir = os.path.join(results_dir, f'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    filename = os.path.join(log_dir, f'{args.exp_name}.log')
     logging.basicConfig(filename=filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     if args.load:
@@ -765,7 +771,7 @@ if __name__ == '__main__':
         model = get_opt(args.model)
         model.eval()
 
-        dataloader, _ = get_loaders(args.dataset,
+        dataloader, _ = get_loaders(        args.dataset,
                                             nsamples=args.nsamples,
                                             seed=args.seed,
                                             model=args.model,

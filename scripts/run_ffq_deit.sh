@@ -1,13 +1,27 @@
-# ViT
+# DeiT no P_l: post icml
 vit_models=(deit3_small_patch16_224.fb_in22k_ft_in1k deit3_base_patch16_224.fb_in22k_ft_in1k deit3_huge_patch14_224.fb_in22k_ft_in1k)
 img_sizes=(224 224 224)
 
 for var in ${!vit_models[@]}
 do
 echo ${vit_models[$var]}
-python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir ffq_3p0sig --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn s --eval_batch_size 8 --tff_redundancy 1 --x_sigma 3.0 --timm_model_name ${vit_models[$var]} --pre_proj --percdamp 0.01  --img_size ${img_sizes[$var]}
+python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir ffq_deit_no_pl --wbits 2 --tff_redundancy 1.0 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn s --eval_batch_size 8 --x_sigma 2.0 --timm_model_name ${vit_models[$var]} --pre_proj --percdamp 0.01  --img_size ${img_sizes[$var]}
+python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir ffq_deit_no_pl --wbits 2 --tff_redundancy 1.1 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn s --eval_batch_size 8 --x_sigma 2.0 --timm_model_name ${vit_models[$var]} --pre_proj --percdamp 0.01  --img_size ${img_sizes[$var]}
+python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir ffq_deit_no_pl --wbits 2 --tff_redundancy 1.2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn s --eval_batch_size 8 --x_sigma 2.0 --timm_model_name ${vit_models[$var]} --pre_proj --percdamp 0.01  --img_size ${img_sizes[$var]}
+python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir ffq_deit_no_pl --wbits 2 --tff_redundancy 1.3 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn s --eval_batch_size 8 --x_sigma 2.0 --timm_model_name ${vit_models[$var]} --pre_proj --percdamp 0.01  --img_size ${img_sizes[$var]}
 sleep 2
 done
+
+# # ViT
+# vit_models=(deit3_small_patch16_224.fb_in22k_ft_in1k deit3_base_patch16_224.fb_in22k_ft_in1k deit3_huge_patch14_224.fb_in22k_ft_in1k)
+# img_sizes=(224 224 224)
+# 
+# for var in ${!vit_models[@]}
+# do
+# echo ${vit_models[$var]}
+# python vit_quip.py --exp_name ${vit_models[$var]} --parent_dir ffq_3p0sig --wbits 2 --Weiner_m_diag_rank 0 --quant ldlq --pre_tff --pre_gptqH --qfn s --eval_batch_size 8 --tff_redundancy 1 --x_sigma 3.0 --timm_model_name ${vit_models[$var]} --pre_proj --percdamp 0.01  --img_size ${img_sizes[$var]}
+# sleep 2
+# done
 
 # Swin
 # swin_models=(swin_tiny_patch4_window7_224.ms_in22k_ft_in1k swin_small_patch4_window7_224.ms_in22k_ft_in1k swin_large_patch4_window7_224.ms_in22k_ft_in1k swin_base_patch4_window7_224.ms_in22k_ft_in1k)

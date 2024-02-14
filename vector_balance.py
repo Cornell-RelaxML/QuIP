@@ -512,8 +512,8 @@ def quantize_weight_vecbal(w,
                             ):
 
     import os 
-    if os.environ['BKTPT'] == 'True':
-        breakpoint()
+    # if os.environ['BKTPT'] == 'True':
+    #     breakpoint()
 
     if (qfn == 'a') and (qmethod == 'ldl_gptqequiv'):
         wr = round_ldl_gptqequiv((w/scale) + zero, H, nbits=nbits)

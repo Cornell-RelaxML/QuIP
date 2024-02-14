@@ -34,11 +34,13 @@ if __name__ == '__main__':
                         help="path to save the results")
     parser.add_argument('--img_size', type=int, default=224,
                         help="image size")
+    parser.add_argument('--save', type=str, default='', help='Save quantized checkpoint under this name.')
 
     args = parser.parse_args()
 
     exp_name = args.exp_name # 'mlp_attn_quant_weiner_full'
-    results_dir = "output_new"
+    # results_dir = "output_new"
+    results_dir = '/data/harsha/storage/framequant/output_vit'
     if exp_name != 'debug_thread':
         if args.save_path is None:
             current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -125,7 +127,8 @@ if __name__ == '__main__':
         logging.info(f'{name = }, {val_acc = }')
 
     if exp_name != 'debug_thread':
-        torch.save(net.state_dict(), os.path.join(directory_path, 'model.pth'))
+        if args.save:
+            torch.save(net.state_dict(), os.path.join(directory_path, 'model.pth'))
 
         import csv
         results  = [name, num_params/1e6, val_acc]
