@@ -83,7 +83,7 @@ def get_c4(nsamples, seed, seqlen, model):
     for _i in range(nsamples):
         print(_i)
         while True:
-            trainenc = tokenizer(next(iter(train_iter))['text'], return_tensors='pt')
+            trainenc = tokenizer(next(train_iter)['text'], return_tensors='pt')
             if trainenc.input_ids.shape[1] >= seqlen:
                 break
         i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
@@ -214,9 +214,8 @@ def get_c4_new(nsamples, seed, seqlen, model):
     trainloader = []
     for _i in range(nsamples):
         print(_i)
-        breakpoint()
         while True:
-            trainenc = tokenizer(next(iter(traindata))['text'], return_tensors='pt')
+            trainenc = tokenizer(next(train_iter)['text'], return_tensors='pt')
             if trainenc.input_ids.shape[1] >= seqlen:
                 break
         i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)

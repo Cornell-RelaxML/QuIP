@@ -31,6 +31,100 @@ def get_opt(model):
     model.seqlen = model.config.max_position_embeddings
     return model
 
+@torch.no_grad()
+def opt_emb_quant(subset, dev, args):
+    ######################################################
+    # quantize embedding
+    ######################################################
+    name = 'emb'
+    quant_method = {}
+    if args.emb_quant == 'gptq':
+        quant_method[name] = GPTQ(subset[name])
+        quant_method[name].quantizer = Quantizer()
+        quant_method[name].quantizer.configure(args.emb_wbits,
+                                       perchannel=True,
+                                       sym=False,
+                                       qfn=args.emb_qfn,
+                                       mse=False, 
+                                       x_sigma= args.x_sigma)
+    elif args.emb_quant == 'nearest':
+        quant_method[name] = Nearest(subset[name])
+        quant_method[name].quantizer = Quantizer()
+        quant_method[name].quantizer.configure(args.emb_wbits,
+                                       perchannel=True,
+                                       sym=False,
+                                       qfn=args.emb_qfn,
+                                       mse=False, 
+                                       x_sigma= args.x_sigma)
+    elif args.emb_quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
+        quant_method[name] = Balance(subset[name])
+        quant_method[name].configure(
+                            args.emb_quant,
+                            args.emb_wbits, 
+                            args.npasses,
+                            unbiased=args.unbiased)
+        quant_method[name].quantizer = Quantizer()
+        quant_method[name].quantizer.configure(args.emb_wbits,
+                                       perchannel=True,
+                                       sym=False,
+                                       qfn=args.emb_qfn,
+                                       mse=False, 
+                                       x_sigma= args.x_sigma)
+
+        if args.pre_tff:
+            u_n = subset[name].weight.shape[0]
+            v_n = subset[name].weight.shape[1]
+
+            l_tff = u_n // 16
+            k_tff = round(u_n // l_tff * args.tff_redundancy)
+            tffs_u = construct_real_tff(k_tff, l_tff // 2, u_n // 2)
+
+            l_tff = v_n // 16
+            k_tff = round(v_n // l_tff * args.tff_redundancy)
+            tffs_v = construct_real_tff(k_tff, l_tff // 2, v_n // 2)
+
+            g_u = torch.Generator() # use this to store the seed for later
+            g_u.manual_seed(args.seed + 98776)
+            u_seed = g_u.seed()
+            rand_mat_u = torch.randn((u_n, u_n), generator=g_u)
+            Q_u, _ = torch.linalg.qr(rand_mat_u)
+            g_v = torch.Generator() # use this to store the seed for later
+            g_u.manual_seed(args.seed + 98777)
+            v_seed = g_v.seed()
+            rand_mat_v = torch.randn((v_n, v_n), generator=g_v)
+            Q_v, _ = torch.linalg.qr(rand_mat_v)
+            quant_method[name].U = tffs_u.view(-1, u_n) @ Q_u.T
+            quant_method[name].V = tffs_v.view(-1, v_n) @ Q_v.T
+
+    quant_method[name].H = torch.eye(subset[name].weight.shape[1], dtype=torch.float32, device=dev)
+
+    quant_method[name].name = name
+
+    # quant_method[name].preproc(
+    #                     preproc_gptqH=args.pre_gptqH, percdamp=args.percdamp,
+    #                     preproc_rescale=args.pre_rescale, 
+    #                     preproc_proj=args.pre_proj, preproc_proj_extra=args.pre_proj_extra)
+    quant_method[name].preproc(
+                        preproc_gptqH=args.emb_pre_gptqH, percdamp=args.percdamp,
+                        preproc_rescale=args.emb_pre_rescale, 
+                        preproc_proj=args.emb_pre_proj, preproc_proj_extra=args.pre_proj_extra)
+    print(f'$$$$$$$$$$$$$$$$$ preproc done $$$$$$$$$$$$$$$$$$')
+    if args.emb_quant == 'gptq':
+        quant_method[name].fasterquant(groupsize=args.groupsize)
+    elif args.emb_quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
+        quant_method[name].fasterquant(lazy_batch=args.lazy_batch)
+    elif args.emb_quant == 'nearest':
+        quant_method[name].fasterquant()
+    # quantizers['model.decoder.layers.%d.%s' %
+    #             (i, name)] = quant_method[name].quantizer.to('cpu')
+    # errors.append(quant_method[name].error)
+    # times.append(quant_method[name].time)
+    # Hmags.append(quant_method[name].Hmag)
+
+    quant_method[name].free()
+    del quant_method
+
+
 
 @torch.no_grad()
 def opt_sequential(model, dataloader, dev, args):
@@ -51,6 +145,12 @@ def opt_sequential(model, dataloader, dev, args):
                'project_in') and model.model.decoder.project_in:
         model.model.decoder.project_in = model.model.decoder.project_in.to(dev)
     layers[0] = layers[0].to(dev)
+
+    # Do the embed quantization
+    if args.emb_quant_en:
+        name = 'emb'
+        subset = {name: model.model.decoder.embed_tokens}
+        opt_emb_quant(subset, dev, args)
 
     dtype = next(iter(model.parameters())).dtype
     inps = torch.zeros((args.nsamples, model.seqlen, model.config.hidden_size),
@@ -96,6 +196,7 @@ def opt_sequential(model, dataloader, dev, args):
     attention_mask = cache['attention_mask']
 
     print('Ready.')
+
 
     quantizers = {}
     tff_rand_seeds = {}
@@ -187,7 +288,6 @@ def opt_sequential(model, dataloader, dev, args):
         layer = dual_gpu_layer(layers[i])
 
         subset = find_layers(layer)
-        breakpoint()
         quant_method = {}
         # Initialize Quant Method and Compute H
         for name in subset:
@@ -651,6 +751,8 @@ if __name__ == '__main__':
                         help="num vals")
     parser.add_argument('--x_sigma', type=float, default=2,
                         help="x times sigma for symm scale")
+    parser.add_argument('--emb_quant_en', action='store_true',
+                        help="enable quantization of embedding")
 
 
     parser.add_argument('model',
@@ -671,12 +773,24 @@ if __name__ == '__main__':
                         'nearest', 'gptq'],
                         default='nearest',
                         help='Which quantization method to use.')
+    parser.add_argument('--emb_quant',
+                        choices=['allbal', 
+                        'ldlq', 'ldlqRG', 'ldlbal_admm', 
+                        'nearest', 'gptq'],
+                        default='nearest',
+                        help='Which quantization method to use.')
     parser.add_argument(
         '--wbits',
         type=int,
         default=16,
         choices=[2, 3, 4, 16],
         help='#bits to use for quantization; use 16 for evaluating base model.')
+    parser.add_argument(
+        '--emb_wbits',
+        type=int,
+        default=16,
+        choices=[2, 3, 4, 16],
+        help='#bits to use for embedding quantization; use 16 for evaluating base model.')
     parser.add_argument(
         '--npasses',
         type=int,
@@ -704,6 +818,18 @@ if __name__ == '__main__':
         action='store_true',
         help='preprocessing')
     parser.add_argument(
+        '--emb_pre_gptqH',
+        action='store_true',
+        help='preprocessing')
+    parser.add_argument(
+        '--emb_pre_rescale',
+        action='store_true',
+        help='preprocessing')
+    parser.add_argument(
+        '--emb_pre_proj',
+        action='store_true',
+        help='preprocessing')
+    parser.add_argument(
         '--pre_proj_extra',
         type=int,
         default=0,
@@ -713,6 +839,10 @@ if __name__ == '__main__':
                         type=str,
                         default='a',
                         help='qfn: a is default, b is sym incoherent based')
+    parser.add_argument('--emb_qfn',
+                        type=str,
+                        default='a',
+                        help='emb_qfn: a is default, b is sym incoherent based')
     parser.add_argument('--save',
                         type=str,
                         default='',
@@ -757,8 +887,8 @@ if __name__ == '__main__':
         args.proj_extra  = 1
         args.qfn         = 'b'
 
-    # results_dir = 'output_opt'
-    results_dir = '/nobackup/harsha/storage/framequant/output_opt'
+    results_dir = 'output_opt'
+    # results_dir = '/nobackup/harsha/storage/framequant/output_opt'
     log_dir = os.path.join(results_dir, f'logs')
     os.makedirs(log_dir, exist_ok=True)
     filename = os.path.join(log_dir, f'{args.exp_name}.log')
@@ -817,6 +947,7 @@ if __name__ == '__main__':
         # for dataset in ['wikitext2', 'ptb', 'c4']:
         ppls = []
         for dataset in ['wikitext2', 'ptb-new', 'c4-new']:
+        # for dataset in ['wikitext2', 'ptb-new']:
             dataloader, testloader = get_loaders(dataset,
                                                 seed=args.seed,
                                                 model=args.model,
@@ -830,7 +961,8 @@ if __name__ == '__main__':
 
     import csv
     import os
-    results  = [args.exp_name, args.tff_redundancy, ppls[0], ppls[1], ppls[2]]
+    results  = [args.exp_name, args.tff_redundancy, args.emb_quant]
+    results.extend(ppls)
     write_path = os.path.join(results_dir, f'{args.parent_dir}', f'wb{args.wbits}')
     os.makedirs(write_path, exist_ok=True)
     csv_file_path = os.path.join(write_path,'results.csv')
