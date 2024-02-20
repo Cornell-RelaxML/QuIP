@@ -73,11 +73,11 @@ def llama_emb_quant(subset, dev, args):
             v_n = subset[name].weight.shape[1]
 
             l_tff = u_n // 16
-            k_tff = round(u_n // l_tff * args.tff_redundancy)
+            k_tff = round(u_n // l_tff * args.emb_redundancy)
             tffs_u = construct_real_tff(k_tff, l_tff // 2, u_n // 2)
 
             l_tff = v_n // 16
-            k_tff = round(v_n // l_tff * args.tff_redundancy)
+            k_tff = round(v_n // l_tff * args.emb_redundancy)
             tffs_v = construct_real_tff(k_tff, l_tff // 2, v_n // 2)
 
             g_u = torch.Generator() # use this to store the seed for later
@@ -805,6 +805,8 @@ if __name__ == '__main__':
                         help="set the rank for the LowRank approximation of the residue after (Weiner - diag)")
     parser.add_argument('--tff_redundancy', type=float, default=1,
                         help="Redundancy in tffs")
+    parser.add_argument('--emb_redundancy', type=float, default=1,
+                        help="Redundancy in tffs for embedding quantization")
     parser.add_argument('--wiener_filt_en', action='store_true',
                         help="enable the Wiener filter after TFF based quantization")
     parser.add_argument('--clamp_noise_filt_en', action='store_true',
@@ -828,7 +830,7 @@ if __name__ == '__main__':
                         default='gptq',
                         help='Which quantization method to use.')
     parser.add_argument('--emb_quant',
-                        choices=['allbal', 
+                        choices=['ldlq', 
                         'ldlq', 'ldlqRG', 'ldlbal_admm', 
                         'nearest', 'gptq'],
                         default='nearest',
@@ -839,13 +841,13 @@ if __name__ == '__main__':
         '--wbits',
         type=int,
         default=2,
-        choices=[1, 2, 3, 4, 16],
+        choices=[1, 2, 3, 4, 8, 16],
         help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument(
         '--emb_wbits',
         type=int,
         default=16,
-        choices=[2, 3, 4, 16],
+        choices=[2, 3, 4, 8, 16],
         help='#bits to use for embedding quantization; use 16 for evaluating base model.')
     parser.add_argument(
         '--npasses',
@@ -1046,7 +1048,7 @@ if __name__ == '__main__':
 
         import csv
         import os
-        results  = [args.exp_name, args.tff_redundancy, args.emb_quant]
+        results  = [args.exp_name, args.tff_redundancy, args.emb_redundancy, args.emb_quant]
         results.extend(ppls)
         csv_file_path = os.path.join(write_path,'results.csv')
         with open(csv_file_path, mode='a', newline='') as handle:
