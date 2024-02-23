@@ -395,7 +395,7 @@ def llama_sequential(model, dataloader, dev, seed = 0):
 
                 print(f' layer i before preproc')
                 logging.info(f' layer i before preproc')
-                command = "nvidia-smi --query-gpu=index,utilization.memory,memory.total,memory.used --format=csv --id=0,1"
+                # command = "nvidia-smi --query-gpu=index,utilization.memory,memory.total,memory.used --format=csv --id=0,1"
 
                 # if i == 8 and 'down' in name:
                 #     os.environ['BKTPT'] = 'True'
@@ -409,8 +409,8 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                                     preproc_proj=args.pre_proj, preproc_proj_extra=args.pre_proj_extra)
                 print(f' layer i before fasterquant')
                 logging.info(f' layer i before fasterquant')
-                coutput = subprocess.check_output(command, shell=True, text=True)
-                logging.info(coutput)
+                # coutput = subprocess.check_output(command, shell=True, text=True)
+                # logging.info(coutput)
                 if args.quant == 'gptq':
                     quant_method[name].fasterquant(groupsize=args.groupsize)
                 elif args.quant in ['allbal','ldlq','ldlqRG','ldlbal_admm']:
@@ -422,8 +422,8 @@ def llama_sequential(model, dataloader, dev, seed = 0):
                 quantizers['model.layers.%d.%s' % (i, name)] = quant_method[name].quantizer.cpu()
 
                 logging.info(f'layer i after fasterquant')
-                coutput = subprocess.check_output(command, shell=True, text=True)
-                logging.info(coutput)
+                # coutput = subprocess.check_output(command, shell=True, text=True)
+                # logging.info(coutput)
 
                 if args.observe:
                     observer.submit(name=name, layerid=i, gptq=gptq[name], error=error)
